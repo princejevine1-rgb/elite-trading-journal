@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from './supabaseClient';
-import { Analytics } from '@vercel/analytics/next';
 import {
   Plus,
   ChevronLeft,
