@@ -41,6 +41,7 @@ export default function App() {
   const [tempName, setTempName] = useState('');
   const [isAccountModalOpen, setIsAccountModalOpen] = useState(false);
   const [isTradeModalOpen, setIsTradeModalOpen] = useState(false);
+  const [isAccountDropdownOpen, setIsAccountDropdownOpen] = useState(false);
 
   // --- Form States ---
   const [newAccName, setNewAccName] = useState('');
@@ -49,7 +50,6 @@ export default function App() {
   const [tradeDate, setTradeDate] = useState(() => new Date().toISOString().split('T')[0]);
   const [tradeAsset, setTradeAsset] = useState('XAUUSD');
   const [tradeDirection, setTradeDirection] = useState('BUY');
-  const [tradeLots, setTradeLots] = useState('0.10');
   const [tradePnl, setTradePnl] = useState('');
 
   // --- Clock & Calendar ---
@@ -244,12 +244,33 @@ export default function App() {
     }
   };
 
+  const handleDeleteAccount = async (account) => {
+    if (!window.confirm(`Delete "${account.name}" and all of its trades?`)) return;
+
+    await supabase.from('trades').delete().eq('account_id', account.id);
+    const { error } = await supabase
+      .from('trading_accounts')
+      .delete()
+      .eq('id', account.id);
+
+    if (error) return;
+
+    const remainingAccounts = accounts.filter((item) => item.id !== account.id);
+    setAccounts(remainingAccounts);
+    setTrades((prev) => prev.filter((trade) => trade.account_id !== account.id));
+    setActiveAccountId((prev) =>
+      prev === account.id
+        ? remainingAccounts[0]?.id || ''
+        : prev
+    );
+    setIsAccountDropdownOpen(false);
+  };
+
   const handleLogTrade = async (e) => {
     e.preventDefault();
     if (!activeAccount || !session?.user) return;
     const pnlVal = parseFloat(tradePnl);
-    const lotsVal = parseFloat(tradeLots);
-    if (!tradeDate || !tradeAsset.trim() || isNaN(pnlVal) || isNaN(lotsVal)) return;
+    if (!tradeDate || !tradeAsset.trim() || isNaN(pnlVal)) return;
 
     const { data, error } = await supabase
       .from('trades')
@@ -260,7 +281,6 @@ export default function App() {
           date: tradeDate,
           asset: tradeAsset.trim().toUpperCase(),
           direction: tradeDirection,
-          lots: lotsVal.toFixed(2),
           pnl: pnlVal
         }
       ])
@@ -360,7 +380,26 @@ export default function App() {
       });
     }
 
-    return { year, monthName, cells };
+    const weeks = [];
+    for (let index = 0; index < cells.length; index += 7) {
+      const weekCells = cells.slice(index, index + 7);
+      const hasDay = weekCells.some((cell) => cell.type === 'day');
+      if (!hasDay) continue;
+
+      const pnl = weekCells.reduce(
+        (sum, cell) => sum + (cell.type === 'day' && cell.pnl !== undefined ? cell.pnl : 0),
+        0
+      );
+      const firstDay = weekCells.find((cell) => cell.type === 'day')?.day;
+      const lastDay = [...weekCells].reverse().find((cell) => cell.type === 'day')?.day;
+      weeks.push({
+        key: `week-${index}`,
+        label: firstDay === lastDay ? `${monthName} ${firstDay}` : `${monthName} ${firstDay}-${lastDay}`,
+        pnl
+      });
+    }
+
+    return { year, monthName, cells, weeks };
   }, [currentDate, metrics.dailyMap]);
 
   const changeMonth = (offset) => {
@@ -558,22 +597,48 @@ export default function App() {
         {/* RIGHT-ALIGNED COMPACT ACCOUNT BAR */}
         <div className="flex justify-end">
           <div className="inline-flex items-center gap-2 bg-zinc-900 border border-zinc-800 rounded-xl p-1.5">
-            <select
-              value={activeAccountId}
-              onChange={(e) => setActiveAccountId(e.target.value)}
-              className="bg-zinc-950 text-sm font-medium text-zinc-100 px-3 py-1.5 rounded-lg border border-zinc-800 focus:outline-none focus:border-zinc-700"
-              disabled={accounts.length === 0 || dataLoading}
-            >
-              {accounts.length === 0 ? (
-                <option value="">{dataLoading ? 'Syncing...' : 'No Account'}</option>
-              ) : (
-                accounts.map((acc) => (
-                  <option key={acc.id} value={acc.id}>
-                    {acc.name}
-                  </option>
-                ))
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setIsAccountDropdownOpen((open) => !open)}
+                disabled={accounts.length === 0 || dataLoading}
+                className="bg-zinc-950 text-sm font-medium text-zinc-100 px-3 py-1.5 rounded-lg border border-zinc-800 focus:outline-none focus:border-zinc-700 min-w-[140px] text-left"
+              >
+                {activeAccount?.name || (dataLoading ? 'Syncing...' : 'No Account')}
+              </button>
+              {isAccountDropdownOpen && accounts.length > 0 && (
+                <div className="absolute right-0 mt-1.5 z-30 w-56 bg-zinc-950 border border-zinc-800 rounded-xl p-1 shadow-xl">
+                  {accounts.map((acc) => (
+                    <div
+                      key={acc.id}
+                      className={`flex items-center justify-between rounded-lg px-2 py-1.5 ${
+                        acc.id === activeAccountId ? 'bg-zinc-800' : 'hover:bg-zinc-900'
+                      }`}
+                    >
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setActiveAccountId(acc.id);
+                          setIsAccountDropdownOpen(false);
+                        }}
+                        className="flex-1 text-left text-sm text-zinc-100 truncate"
+                      >
+                        {acc.name}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteAccount(acc)}
+                        className="ml-2 p-0.5 text-rose-500 hover:text-rose-400"
+                        title={`Delete ${acc.name}`}
+                        aria-label={`Delete ${acc.name}`}
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
               )}
-            </select>
+            </div>
             <button
               onClick={() => setIsAccountModalOpen(true)}
               className="p-1.5 bg-emerald-500 hover:bg-emerald-400 text-zinc-950 rounded-lg transition-colors"
@@ -710,14 +775,13 @@ export default function App() {
                   <th className="py-3 px-4">Date</th>
                   <th className="py-3 px-4">Asset</th>
                   <th className="py-3 px-4">Direction</th>
-                  <th className="py-3 px-4">Lots</th>
                   <th className="py-3 px-4 text-right">PnL</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-zinc-800/60 text-sm">
                 {accountTrades.length === 0 ? (
                   <tr>
-                    <td colSpan="5" className="py-8 text-center text-zinc-500">
+                    <td colSpan="4" className="py-8 text-center text-zinc-500">
                       {dataLoading
                         ? 'Loading synced trades...'
                         : 'No trades logged for this account yet.'}
@@ -741,7 +805,6 @@ export default function App() {
                             {trade.direction}
                           </span>
                         </td>
-                        <td className="py-3 px-4 font-mono text-zinc-300">{trade.lots}</td>
                         <td
                           className={`py-3 px-4 text-right font-mono font-semibold ${
                             isProfit ? 'text-emerald-400' : 'text-rose-400'
@@ -786,50 +849,91 @@ export default function App() {
             </div>
           </div>
 
-          <div className="grid grid-cols-7 gap-1.5 text-center text-xs font-semibold text-zinc-500 pt-2">
+          <div className="grid grid-cols-8 gap-1.5 text-center text-xs font-semibold text-zinc-500 pt-2">
             {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day) => (
               <div key={day} className="py-1">
                 {day}
               </div>
             ))}
+            <div className="py-1 text-[10px] uppercase">Weekly PnL</div>
           </div>
 
-          <div className="grid grid-cols-7 gap-1.5">
-            {calendarData.cells.map((cell) => {
-              if (cell.type === 'empty') {
-                return (
-                  <div
-                    key={cell.key}
-                    className="h-16 md:h-20 rounded-xl bg-zinc-950/30 border border-zinc-900/50"
-                  />
-                );
-              }
-
-              const hasPnl = cell.pnl !== undefined;
-              const isPos = hasPnl && cell.pnl > 0;
-              const isNeg = hasPnl && cell.pnl < 0;
+          <div className="space-y-1.5">
+            {Array.from({ length: Math.ceil(calendarData.cells.length / 7)}, (_, rowIndex) => {
+              const weekCells = calendarData.cells.slice(rowIndex * 7, rowIndex * 7 + 7);
+              const weekPnl = weekCells.reduce(
+                (sum, cell) => sum + (cell.type === 'day' && cell.pnl !== undefined ? cell.pnl : 0),
+                0
+              );
 
               return (
-                <div
-                  key={cell.key}
-                  className={`h-16 md:h-20 rounded-xl border p-2 flex flex-col justify-between transition-colors ${
-                    isPos
-                      ? 'bg-emerald-500/10 border-emerald-500/30'
-                      : isNeg
-                      ? 'bg-rose-500/10 border-rose-500/30'
-                      : 'bg-zinc-950/70 border-zinc-800/80'
-                  }`}
-                >
-                  <span className="text-xs font-medium text-zinc-400">{cell.day}</span>
-                  {hasPnl && (
+                <div key={`week-row-${rowIndex}`} className="grid grid-cols-8 gap-1.5">
+                  {weekCells.map((cell) => {
+                    if (cell.type === 'empty') {
+                      return (
+                        <div
+                          key={cell.key}
+                          className="h-16 md:h-20 rounded-xl bg-zinc-950/30 border border-zinc-900/50"
+                        />
+                      );
+                    }
+
+                    const hasPnl = cell.pnl !== undefined;
+                    const isPos = hasPnl && cell.pnl > 0;
+                    const isNeg = hasPnl && cell.pnl < 0;
+
+                    return (
+                      <div
+                        key={cell.key}
+                        className={`h-16 md:h-20 rounded-xl border p-2 flex flex-col justify-between transition-colors ${
+                          isPos
+                            ? 'bg-emerald-500/10 border-emerald-500/30'
+                            : isNeg
+                            ? 'bg-rose-500/10 border-rose-500/30'
+                            : 'bg-zinc-950/70 border-zinc-800/80'
+                        }`}
+                      >
+                        <span className="text-xs font-medium text-zinc-400">{cell.day}</span>
+                        {hasPnl && (
+                          <span
+                            className={`text-xs md:text-sm font-mono font-bold truncate ${
+                              isPos ? 'text-emerald-400' : isNeg ? 'text-rose-400' : 'text-zinc-300'
+                            }`}
+                          >
+                            {formatCompactPnl(cell.pnl)}
+                          </span>
+                        )}
+                      </div>
+                    );
+                  })}
+                  {weekCells.length < 7 &&
+                    Array.from({ length: 7 - weekCells.length }, (_, index) => (
+                      <div
+                        key={`week-end-empty-${index}`}
+                        className="h-16 md:h-20 rounded-xl bg-zinc-950/30 border border-zinc-900/50"
+                      />
+                    ))}
+                  <div
+                    className={`h-16 md:h-20 rounded-xl border p-2 flex flex-col justify-center items-center ${
+                      weekPnl > 0
+                        ? 'bg-emerald-500/10 border-emerald-500/30'
+                        : weekPnl < 0
+                        ? 'bg-rose-500/10 border-rose-500/30'
+                        : 'bg-zinc-950/70 border-zinc-800/80'
+                    }`}
+                  >
                     <span
-                      className={`text-xs md:text-sm font-mono font-bold truncate ${
-                        isPos ? 'text-emerald-400' : isNeg ? 'text-rose-400' : 'text-zinc-300'
+                      className={`text-xs md:text-sm font-mono font-bold text-center ${
+                        weekPnl > 0
+                          ? 'text-emerald-400'
+                          : weekPnl < 0
+                          ? 'text-rose-400'
+                          : 'text-zinc-300'
                       }`}
                     >
-                      {formatCompactPnl(cell.pnl)}
+                      {formatCurrency(weekPnl)}
                     </span>
-                  )}
+                  </div>
                 </div>
               );
             })}
@@ -933,32 +1037,33 @@ export default function App() {
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-medium text-zinc-400 mb-1.5">
-                    Direction
-                  </label>
-                  <select
-                    value={tradeDirection}
-                    onChange={(e) => setTradeDirection(e.target.value)}
-                    className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3.5 py-2.5 text-sm text-white focus:outline-none focus:border-emerald-500"
+              <div>
+                <label className="block text-xs font-medium text-zinc-400 mb-1.5">
+                  Direction
+                </label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setTradeDirection('BUY')}
+                    className={`py-2.5 rounded-xl text-sm font-bold transition-colors ${
+                      tradeDirection === 'BUY'
+                        ? 'bg-emerald-500 text-zinc-950'
+                        : 'bg-zinc-950 border border-zinc-800 text-emerald-400'
+                    }`}
                   >
-                    <option value="BUY">BUY</option>
-                    <option value="SELL">SELL</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-medium text-zinc-400 mb-1.5">Lots</label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    min="0.01"
-                    required
-                    value={tradeLots}
-                    onChange={(e) => setTradeLots(e.target.value)}
-                    className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3.5 py-2.5 text-sm text-white focus:outline-none focus:border-emerald-500"
-                  />
+                    BUY
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setTradeDirection('SELL')}
+                    className={`py-2.5 rounded-xl text-sm font-bold transition-colors ${
+                      tradeDirection === 'SELL'
+                        ? 'bg-rose-500 text-white'
+                        : 'bg-zinc-950 border border-zinc-800 text-rose-400'
+                    }`}
+                  >
+                    SELL
+                  </button>
                 </div>
               </div>
 
