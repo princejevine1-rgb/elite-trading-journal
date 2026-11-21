@@ -47,6 +47,9 @@ export default function App() {
   const [isAccountModalOpen, setIsAccountModalOpen] = useState(false);
   const [isAccountDropdownOpen, setIsAccountDropdownOpen] = useState(false);
   const [showAllTrades, setShowAllTrades] = useState(false);
+  const [accountToDelete, setAccountToDelete] = useState(null);
+  const [isDeletingAccount, setIsDeletingAccount] = useState(false);
+  const [deleteAccountError, setDeleteAccountError] = useState('');
   const accountDropdownRef = useRef(null);
 
   useEffect(() => {
@@ -326,6 +329,58 @@ export default function App() {
     if (accountCreating || accounts.length === 0) return;
     setIsAccountModalOpen(false);
     setAccountError('');
+  };
+
+  const handleDeleteAccount = async () => {
+    if (isDeletingAccount || !accountToDelete) return;
+    if (!session?.user?.id) {
+      setDeleteAccountError('Please sign in again before deleting this account.');
+      return;
+    }
+
+    setIsDeletingAccount(true);
+    setDeleteAccountError('');
+
+    const { error: tradesDeleteError } = await supabase
+      .from('trades')
+      .delete()
+      .eq('account_id', accountToDelete.id)
+      .eq('user_id', session.user.id);
+
+    if (tradesDeleteError) {
+      setDeleteAccountError(tradesDeleteError.message);
+      setIsDeletingAccount(false);
+      return;
+    }
+
+    setTrades((prev) => prev.filter((trade) => trade.account_id !== accountToDelete.id));
+
+    const { data: deletedAccount, error: accountDeleteError } = await supabase
+      .from('trading_accounts')
+      .delete()
+      .eq('id', accountToDelete.id)
+      .eq('user_id', session.user.id)
+      .select('id')
+      .maybeSingle();
+
+    if (accountDeleteError || !deletedAccount) {
+      setDeleteAccountError(
+        accountDeleteError
+          ? `Trade history was deleted, but the account could not be deleted: ${accountDeleteError.message}`
+          : 'Trade history was deleted, but the account could not be found or deleted.'
+      );
+      setIsDeletingAccount(false);
+      return;
+    }
+
+    const remainingAccounts = accounts.filter((account) => account.id !== accountToDelete.id);
+    setAccounts(remainingAccounts);
+    if (activeAccountId === accountToDelete.id) {
+      setActiveAccountId(remainingAccounts[0]?.id || '');
+    }
+    setShowAllTrades(false);
+    setAccountToDelete(null);
+    setIsDeletingAccount(false);
   };
 
   const handleCreateAccount = async (e) => {
@@ -766,7 +821,7 @@ export default function App() {
                 type="button"
                 onClick={() => setIsAccountDropdownOpen((open) => !open)}
                 disabled={accounts.length === 0 || dataLoading}
-                aria-haspopup="listbox"
+                aria-haspopup="menu"
                 aria-expanded={isAccountDropdownOpen}
                 className="group inline-grid h-7 w-fit min-w-[80px] max-w-[190px] grid-cols-[12px_auto_20px] items-center gap-1 rounded-md border border-zinc-700 bg-zinc-950 px-2 text-center transition-colors hover:bg-zinc-900 disabled:cursor-not-allowed disabled:opacity-60"
               >
@@ -807,40 +862,56 @@ export default function App() {
                 </div>
 
                 <div
-                  role="listbox"
+                  role="menu"
                   aria-label="Trading accounts"
                   className="max-h-64 space-y-0.5 overflow-y-auto"
                 >
                   {accounts.map((acc) => {
                     const isActive = acc.id === activeAccountId;
                     return (
-                      <button
+                      <div
                         key={acc.id}
-                        type="button"
-                        role="option"
-                        aria-selected={isActive}
-                        onClick={() => {
-                          setActiveAccountId(acc.id);
-                          setIsAccountDropdownOpen(false);
-                        }}
-                        className={`flex w-full items-center gap-2 rounded-lg border px-2 py-1.5 text-left transition-all ${
+                        role="group"
+                        className={`flex w-full items-center gap-1 rounded-lg border p-1 transition-colors ${
                           isActive
-                            ? 'border-emerald-400/25 bg-emerald-500/[0.09]'
-                            : 'border-transparent hover:border-zinc-700/80 hover:bg-zinc-900/90'
+                            ? 'border-emerald-400/30 bg-emerald-500/[0.09]'
+                            : 'border-zinc-700 bg-transparent hover:border-zinc-500'
                         }`}
                       >
-                        <span className="min-w-0 flex-1">
-                          <span className="block truncate text-xs font-medium text-zinc-100">
+                        <button
+                          type="button"
+                          role="menuitemradio"
+                          aria-checked={isActive}
+                          onClick={() => {
+                            setActiveAccountId(acc.id);
+                            setIsAccountDropdownOpen(false);
+                          }}
+                          className="flex min-w-0 flex-1 items-center gap-2 rounded-md px-1 py-1 text-left"
+                        >
+                          <span className="min-w-0 flex-1 truncate text-xs font-medium text-zinc-100">
                             {acc.name}
                           </span>
-                        </span>
-                        {acc.auto_sync_enabled && (
-                          <span className="shrink-0 rounded border border-emerald-500/20 bg-emerald-500/10 px-1 py-0.5 text-[8px] font-semibold text-emerald-300">
-                            MT5
-                          </span>
-                        )}
-                        {isActive && <Check className="h-3 w-3 shrink-0 text-emerald-300" />}
-                      </button>
+                          {acc.auto_sync_enabled && (
+                            <span className="shrink-0 rounded border border-emerald-500/20 bg-emerald-500/10 px-1 py-0.5 text-[8px] font-semibold text-emerald-300">
+                              MT5
+                            </span>
+                          )}
+                        </button>
+                        <button
+                          type="button"
+                          role="menuitem"
+                          onClick={() => {
+                            setIsAccountDropdownOpen(false);
+                            setAccountToDelete(acc);
+                            setDeleteAccountError('');
+                          }}
+                          title={`Delete ${acc.name}`}
+                          aria-label={`Delete ${acc.name}`}
+                          className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-zinc-500 transition-colors hover:bg-rose-500/10 hover:text-rose-300"
+                        >
+                          <X className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
                     );
                   })}
                 </div>
@@ -1343,6 +1414,64 @@ export default function App() {
                   : 'Create Account'}
               </button>
             </form>
+          </div>
+        </div>
+      )}
+
+      {accountToDelete && (
+        <div
+          onClick={() => {
+            if (!isDeletingAccount) {
+              setAccountToDelete(null);
+              setDeleteAccountError('');
+            }
+          }}
+          className="fixed inset-0 z-[60] flex items-center justify-center bg-black/75 p-4 backdrop-blur-sm"
+        >
+          <div
+            onClick={(event) => event.stopPropagation()}
+            className="w-full max-w-sm rounded-2xl border border-zinc-700/80 bg-zinc-950/95 p-5 shadow-[0_24px_70px_rgba(0,0,0,0.65)] ring-1 ring-white/5 backdrop-blur-xl"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="delete-account-title"
+          >
+            <h3 id="delete-account-title" className="text-sm font-bold text-white">
+              Delete account?
+            </h3>
+            <p className="mt-2 text-sm text-zinc-300">
+              Delete '{accountToDelete.name}'?
+            </p>
+            <p className="mt-1 text-xs leading-relaxed text-zinc-500">
+              This will permanently delete the account and all of its trade history.
+            </p>
+
+            {deleteAccountError && (
+              <p className="mt-3 rounded-lg border border-rose-500/20 bg-rose-500/10 px-3 py-2 text-xs text-rose-300">
+                {deleteAccountError}
+              </p>
+            )}
+
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setAccountToDelete(null);
+                  setDeleteAccountError('');
+                }}
+                disabled={isDeletingAccount}
+                className="rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-xs font-semibold text-zinc-300 transition-colors hover:border-zinc-600 hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleDeleteAccount}
+                disabled={isDeletingAccount}
+                className="rounded-lg border border-rose-500/30 bg-rose-500/15 px-3 py-1.5 text-xs font-semibold text-rose-300 transition-colors hover:bg-rose-500/25 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {isDeletingAccount ? 'Deleting...' : 'OK'}
+              </button>
+            </div>
           </div>
         </div>
       )}
