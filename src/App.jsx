@@ -51,6 +51,8 @@ export default function App() {
   const [tradeAsset, setTradeAsset] = useState('XAUUSD');
   const [tradeDirection, setTradeDirection] = useState('BUY');
   const [tradePnl, setTradePnl] = useState('');
+  const [tradeError, setTradeError] = useState('');
+  const [tradeSubmitting, setTradeSubmitting] = useState(false);
 
   // --- Clock & Calendar ---
   const [now, setNow] = useState(new Date());
@@ -268,29 +270,55 @@ export default function App() {
 
   const handleLogTrade = async (e) => {
     e.preventDefault();
-    if (!activeAccount || !session?.user) return;
+    setTradeError('');
+    if (tradeSubmitting) return;
+    if (!activeAccount || !session?.user) {
+      setTradeError('You need an active account and signed-in session to save a trade.');
+      return;
+    }
     const pnlVal = parseFloat(tradePnl);
-    if (!tradeDate || !tradeAsset.trim() || isNaN(pnlVal)) return;
+    if (!tradeDate || !tradeAsset.trim() || !Number.isFinite(pnlVal)) {
+      setTradeError('Enter a date, asset, and valid PnL amount.');
+      return;
+    }
 
-    const { data, error } = await supabase
-      .from('trades')
-      .insert([
-        {
-          user_id: session.user.id,
-          account_id: activeAccount.id,
-          date: tradeDate,
-          asset: tradeAsset.trim().toUpperCase(),
-          direction: tradeDirection,
-          pnl: pnlVal
-        }
-      ])
-      .select()
-      .single();
+    setTradeSubmitting(true);
+    try {
+      const { data, error } = await supabase
+        .from('trades')
+        .insert([
+          {
+            user_id: session.user.id,
+            account_id: activeAccount.id,
+            date: tradeDate,
+            asset: tradeAsset.trim().toUpperCase(),
+            direction: tradeDirection,
+            pnl: pnlVal
+          }
+        ])
+        .select()
+        .single();
 
-    if (!error && data) {
+      if (error) {
+        setTradeError(`Could not save trade: ${error.message}`);
+        return;
+      }
+      if (!data) {
+        setTradeError('Could not save trade: no trade record was returned.');
+        return;
+      }
+
       setTrades((prev) => [data, ...prev]);
       setTradePnl('');
       setIsTradeModalOpen(false);
+    } catch (error) {
+      setTradeError(
+        `Could not save trade: ${
+          error instanceof Error ? error.message : 'An unexpected error occurred.'
+        }`
+      );
+    } finally {
+      setTradeSubmitting(false);
     }
   };
 
@@ -1006,7 +1034,10 @@ export default function App() {
             <div className="flex items-center justify-between">
               <h3 className="text-lg font-bold text-white">Log Trade</h3>
               <button
-                onClick={() => setIsTradeModalOpen(false)}
+                onClick={() => {
+                  setIsTradeModalOpen(false);
+                  setTradeError('');
+                }}
                 className="text-zinc-400 hover:text-white"
               >
                 <X className="w-5 h-5" />
@@ -1080,11 +1111,18 @@ export default function App() {
                 />
               </div>
 
+              {tradeError && (
+                <p role="alert" className="text-sm text-rose-400">
+                  {tradeError}
+                </p>
+              )}
+
               <button
                 type="submit"
-                className="w-full py-2.5 bg-emerald-500 hover:bg-emerald-400 text-zinc-950 font-bold text-sm rounded-xl transition-colors"
+                disabled={tradeSubmitting}
+                className="w-full py-2.5 bg-emerald-500 hover:bg-emerald-400 disabled:opacity-60 text-zinc-950 font-bold text-sm rounded-xl transition-colors"
               >
-                Save Trade
+                {tradeSubmitting ? 'Saving...' : 'Save Trade'}
               </button>
             </form>
           </div>
