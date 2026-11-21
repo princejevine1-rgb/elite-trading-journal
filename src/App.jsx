@@ -58,6 +58,9 @@ export default function App() {
   const [isAccountModalOpen, setIsAccountModalOpen] = useState(false);
   const [isTradeModalOpen, setIsTradeModalOpen] = useState(false);
   const [isWeekendNoticeOpen, setIsWeekendNoticeOpen] = useState(false);
+  const [accountToDelete, setAccountToDelete] = useState(null);
+  const [deleteAccountError, setDeleteAccountError] = useState('');
+  const [deleteAccountSubmitting, setDeleteAccountSubmitting] = useState(false);
   const [isAccountDropdownOpen, setIsAccountDropdownOpen] = useState(false);
 
   // --- Form States ---
@@ -265,26 +268,53 @@ export default function App() {
     }
   };
 
-  const handleDeleteAccount = async (account) => {
-    if (!window.confirm(`Delete "${account.name}" and all of its trades?`)) return;
+  const handleDeleteAccount = async () => {
+    if (!accountToDelete || deleteAccountSubmitting) return;
 
-    await supabase.from('trades').delete().eq('account_id', account.id);
-    const { error } = await supabase
-      .from('trading_accounts')
-      .delete()
-      .eq('id', account.id);
+    setDeleteAccountError('');
+    setDeleteAccountSubmitting(true);
+    try {
+      const { error: tradesError } = await supabase
+        .from('trades')
+        .delete()
+        .eq('account_id', accountToDelete.id);
 
-    if (error) return;
+      if (tradesError) {
+        setDeleteAccountError(`Could not delete account trades: ${tradesError.message}`);
+        return;
+      }
 
-    const remainingAccounts = accounts.filter((item) => item.id !== account.id);
-    setAccounts(remainingAccounts);
-    setTrades((prev) => prev.filter((trade) => trade.account_id !== account.id));
-    setActiveAccountId((prev) =>
-      prev === account.id
-        ? remainingAccounts[0]?.id || ''
-        : prev
-    );
-    setIsAccountDropdownOpen(false);
+      const { error } = await supabase
+        .from('trading_accounts')
+        .delete()
+        .eq('id', accountToDelete.id);
+
+      if (error) {
+        setDeleteAccountError(`Could not delete account: ${error.message}`);
+        return;
+      }
+
+      const remainingAccounts = accounts.filter((item) => item.id !== accountToDelete.id);
+      setAccounts(remainingAccounts);
+      setTrades((prev) =>
+        prev.filter((trade) => trade.account_id !== accountToDelete.id)
+      );
+      setActiveAccountId((prev) =>
+        prev === accountToDelete.id
+          ? remainingAccounts[0]?.id || ''
+          : prev
+      );
+      setAccountToDelete(null);
+      setIsAccountDropdownOpen(false);
+    } catch (error) {
+      setDeleteAccountError(
+        `Could not delete account: ${
+          error instanceof Error ? error.message : 'An unexpected error occurred.'
+        }`
+      );
+    } finally {
+      setDeleteAccountSubmitting(false);
+    }
   };
 
   const handleLogTrade = async (e) => {
@@ -704,7 +734,11 @@ export default function App() {
                       </button>
                       <button
                         type="button"
-                        onClick={() => handleDeleteAccount(acc)}
+                        onClick={() => {
+                          setAccountToDelete(acc);
+                          setDeleteAccountError('');
+                          setIsAccountDropdownOpen(false);
+                        }}
                         className="ml-2 p-0.5 text-rose-500 hover:text-rose-400"
                         title={`Delete ${acc.name}`}
                         aria-label={`Delete ${acc.name}`}
@@ -1215,6 +1249,50 @@ export default function App() {
             >
               Close
             </button>
+          </div>
+        </div>
+      )}
+
+      {accountToDelete && (
+        <div
+          className="fixed inset-0 z-[60] bg-black/75 backdrop-blur-sm flex items-center justify-center p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="delete-account-title"
+        >
+          <div className="bg-zinc-900 border border-zinc-800 rounded-2xl w-full max-w-sm p-6 text-center space-y-4">
+            <h3 id="delete-account-title" className="text-lg font-bold text-white">
+              Delete {accountToDelete.name}
+            </h3>
+            <p className="text-sm text-zinc-400">
+              This will permanently delete the account and all its trades.
+            </p>
+            {deleteAccountError && (
+              <p role="alert" className="text-sm text-rose-400">
+                {deleteAccountError}
+              </p>
+            )}
+            <div className="grid grid-cols-2 gap-3">
+              <button
+                type="button"
+                disabled={deleteAccountSubmitting}
+                onClick={() => {
+                  setAccountToDelete(null);
+                  setDeleteAccountError('');
+                }}
+                className="w-full py-2.5 bg-zinc-800 hover:bg-zinc-700 disabled:opacity-60 text-white font-bold text-sm rounded-xl transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={deleteAccountSubmitting}
+                onClick={handleDeleteAccount}
+                className="w-full py-2.5 bg-rose-500 hover:bg-rose-400 disabled:opacity-60 text-white font-bold text-sm rounded-xl transition-colors"
+              >
+                {deleteAccountSubmitting ? 'Deleting...' : 'Confirm'}
+              </button>
+            </div>
           </div>
         </div>
       )}
