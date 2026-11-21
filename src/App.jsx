@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { supabase } from './supabaseClient';
 import {
   Plus,
@@ -17,24 +17,11 @@ import {
   PlusCircle,
   LogOut,
   Lock,
-  Mail
+  Mail,
+  RefreshCw,
+  Server,
+  ShieldCheck
 } from 'lucide-react';
-
-const getTradingDayInfo = (date) => {
-  const parts = new Intl.DateTimeFormat('en-US', {
-    timeZone: 'Africa/Nairobi',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    weekday: 'short'
-  }).formatToParts(date);
-  const getPart = (type) => parts.find((part) => part.type === type)?.value || '';
-
-  return {
-    date: `${getPart('year')}-${getPart('month')}-${getPart('day')}`,
-    isWeekend: ['Sat', 'Sun'].includes(getPart('weekday'))
-  };
-};
 
 export default function App() {
   // --- Auth & User Profile State ---
@@ -51,35 +38,34 @@ export default function App() {
   const [activeAccountId, setActiveAccountId] = useState('');
   const [trades, setTrades] = useState([]);
   const [dataLoading, setDataLoading] = useState(false);
+  const [isSyncingMt5, setIsSyncingMt5] = useState(false);
+  const [syncMessage, setSyncMessage] = useState('');
 
   // --- UI & Modal States ---
   const [isEditingName, setIsEditingName] = useState(false);
   const [tempName, setTempName] = useState('');
   const [isAccountModalOpen, setIsAccountModalOpen] = useState(false);
   const [isTradeModalOpen, setIsTradeModalOpen] = useState(false);
-  const [isWeekendNoticeOpen, setIsWeekendNoticeOpen] = useState(false);
-  const [accountToDelete, setAccountToDelete] = useState(null);
-  const [deleteAccountError, setDeleteAccountError] = useState('');
-  const [deleteAccountSubmitting, setDeleteAccountSubmitting] = useState(false);
-  const [isAccountDropdownOpen, setIsAccountDropdownOpen] = useState(false);
-  const accountDropdownRef = useRef(null);
 
   // --- Form States ---
   const [newAccName, setNewAccName] = useState('');
   const [newAccBalance, setNewAccBalance] = useState('');
+  const [enableMt5Sync, setEnableMt5Sync] = useState(true);
+  const [mt5Login, setMt5Login] = useState('');
+  const [mt5InvestorPassword, setMt5InvestorPassword] = useState('');
+  const [mt5Server, setMt5Server] = useState('');
+  const [accountCreating, setAccountCreating] = useState(false);
+  const [accountError, setAccountError] = useState('');
 
-  const [tradeDate, setTradeDate] = useState(() => getTradingDayInfo(new Date()).date);
+  const [tradeDate, setTradeDate] = useState(() => new Date().toISOString().split('T')[0]);
   const [tradeAsset, setTradeAsset] = useState('XAUUSD');
   const [tradeDirection, setTradeDirection] = useState('BUY');
-  const [tradeLots, setTradeLots] = useState('');
+  const [tradeLots, setTradeLots] = useState('0.10');
   const [tradePnl, setTradePnl] = useState('');
-  const [tradeError, setTradeError] = useState('');
-  const [tradeSubmitting, setTradeSubmitting] = useState(false);
 
   // --- Clock & Calendar ---
   const [now, setNow] = useState(new Date());
   const [currentDate, setCurrentDate] = useState(() => new Date());
-  const tradingDayInfo = getTradingDayInfo(now);
 
   // 1. Check & Listen for Auth Session across devices
   useEffect(() => {
@@ -97,18 +83,14 @@ export default function App() {
     return () => subscription.unsubscribe();
   }, []);
 
-  useEffect(() => {
-    if (!isAccountDropdownOpen) return;
-
-    const handleOutsidePointerDown = (event) => {
-      if (!accountDropdownRef.current?.contains(event.target)) {
-        setIsAccountDropdownOpen(false);
-      }
-    };
-
-    document.addEventListener('pointerdown', handleOutsidePointerDown);
-    return () => document.removeEventListener('pointerdown', handleOutsidePointerDown);
-  }, [isAccountDropdownOpen]);
+  const refreshTrades = useCallback(async () => {
+    const { data: tradeData } = await supabase
+      .from('trades')
+      .select('*')
+      .order('date', { ascending: false })
+      .order('created_at', { ascending: false });
+    if (tradeData) setTrades(tradeData);
+  }, []);
 
   // 2. Fetch User's Accounts & Trades from Supabase once logged in
   useEffect(() => {
@@ -126,15 +108,10 @@ export default function App() {
         .select('*')
         .order('created_at', { ascending: true });
 
-      const { data: tradeData } = await supabase
-        .from('trades')
-        .select('*')
-        .order('date', { ascending: false })
-        .order('created_at', { ascending: false });
+      await refreshTrades();
 
       const fetchedAccounts = accData || [];
       setAccounts(fetchedAccounts);
-      setTrades(tradeData || []);
 
       if (fetchedAccounts.length === 0) {
         setIsAccountModalOpen(true);
@@ -147,13 +124,76 @@ export default function App() {
     };
 
     fetchCloudData();
-  }, [session]);
+
+    // Realtime subscription for automatic trade inserts
+    const channel = supabase
+      .channel('trades-realtime')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'trades' },
+        () => {
+          refreshTrades();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [session, refreshTrades]);
 
   // Live 1-second EAT Clock
   useEffect(() => {
     const timer = setInterval(() => setNow(new Date()), 1000);
     return () => clearInterval(timer);
   }, []);
+
+  const activeAccount = useMemo(
+    () => accounts.find((a) => a.id === activeAccountId) || null,
+    [accounts, activeAccountId]
+  );
+
+  // Trigger MT5 Cloud Sync for the active account
+  const triggerMt5Sync = useCallback(
+    async (targetAccountId, silent = false) => {
+      if (!targetAccountId) return;
+      setIsSyncingMt5(true);
+      if (!silent) setSyncMessage('');
+
+      const { data, error } = await supabase.functions.invoke('mt5-sync', {
+        body: { action: 'sync', accountId: targetAccountId }
+      });
+
+      if (error || data?.error) {
+        if (!silent) {
+          setSyncMessage(data?.error || error?.message || 'MT5 sync pending...');
+        }
+      } else {
+        await refreshTrades();
+        if (!silent) {
+          setSyncMessage(`Synced ${data?.syncedCount ?? 0} MT5 deals`);
+        }
+      }
+
+      setIsSyncingMt5(false);
+    },
+    [refreshTrades]
+  );
+
+  // Auto-sync whenever an MT5-linked account becomes active + poll every 60s
+  useEffect(() => {
+    if (!activeAccount?.auto_sync_enabled || !activeAccount?.metaapi_account_id) {
+      setSyncMessage('');
+      return;
+    }
+
+    triggerMt5Sync(activeAccount.id, true);
+    const interval = setInterval(() => {
+      triggerMt5Sync(activeAccount.id, true);
+    }, 60000);
+
+    return () => clearInterval(interval);
+  }, [activeAccount, triggerMt5Sync]);
 
   const traderName =
     session?.user?.user_metadata?.trader_name ||
@@ -258,10 +298,18 @@ export default function App() {
 
   const handleCreateAccount = async (e) => {
     e.preventDefault();
+    setAccountError('');
     const bal = parseFloat(newAccBalance);
     if (!newAccName.trim() || isNaN(bal) || bal <= 0 || !session?.user) return;
 
-    const { data, error } = await supabase
+    if (enableMt5Sync && (!mt5Login.trim() || !mt5InvestorPassword || !mt5Server.trim())) {
+      setAccountError('Enter MT5 Login, Investor Password, and Broker Server for auto-sync.');
+      return;
+    }
+
+    setAccountCreating(true);
+
+    const { data: createdAcc, error: insertErr } = await supabase
       .from('trading_accounts')
       .insert([
         {
@@ -273,154 +321,92 @@ export default function App() {
       .select()
       .single();
 
-    if (!error && data) {
-      setAccounts((prev) => [...prev, data]);
-      setActiveAccountId(data.id);
-      setNewAccName('');
-      setNewAccBalance('');
-      setIsAccountModalOpen(false);
+    if (insertErr || !createdAcc) {
+      setAccountError(insertErr?.message || 'Failed to create account.');
+      setAccountCreating(false);
+      return;
     }
-  };
 
-  const handleDeleteAccount = async () => {
-    if (!accountToDelete || deleteAccountSubmitting) return;
+    let finalAccount = createdAcc;
 
-    setDeleteAccountError('');
-    setDeleteAccountSubmitting(true);
-    try {
-      const { error: tradesError } = await supabase
-        .from('trades')
-        .delete()
-        .eq('account_id', accountToDelete.id);
+    if (enableMt5Sync) {
+      const { data: connectData, error: connectErr } = await supabase.functions.invoke(
+        'mt5-sync',
+        {
+          body: {
+            action: 'connect',
+            accountId: createdAcc.id,
+            accountName: createdAcc.name,
+            login: mt5Login.trim(),
+            investorPassword: mt5InvestorPassword,
+            server: mt5Server.trim()
+          }
+        }
+      );
 
-      if (tradesError) {
-        setDeleteAccountError(`Could not delete account trades: ${tradesError.message}`);
+      if (connectErr || connectData?.error) {
+        setAccountError(
+          connectData?.error ||
+            connectErr?.message ||
+            'Account saved, but MT5 connection failed.'
+        );
+        setAccounts((prev) => [...prev, createdAcc]);
+        setActiveAccountId(createdAcc.id);
+        setAccountCreating(false);
         return;
       }
 
-      const { error } = await supabase
-        .from('trading_accounts')
-        .delete()
-        .eq('id', accountToDelete.id);
-
-      if (error) {
-        setDeleteAccountError(`Could not delete account: ${error.message}`);
-        return;
-      }
-
-      const remainingAccounts = accounts.filter((item) => item.id !== accountToDelete.id);
-      setAccounts(remainingAccounts);
-      setTrades((prev) =>
-        prev.filter((trade) => trade.account_id !== accountToDelete.id)
-      );
-      setActiveAccountId((prev) =>
-        prev === accountToDelete.id
-          ? remainingAccounts[0]?.id || ''
-          : prev
-      );
-      setAccountToDelete(null);
-      setIsAccountDropdownOpen(false);
-    } catch (error) {
-      setDeleteAccountError(
-        `Could not delete account: ${
-          error instanceof Error ? error.message : 'An unexpected error occurred.'
-        }`
-      );
-    } finally {
-      setDeleteAccountSubmitting(false);
+      finalAccount = {
+        ...createdAcc,
+        mt5_login: mt5Login.trim(),
+        mt5_server: mt5Server.trim(),
+        metaapi_account_id: connectData.metaapiAccountId,
+        auto_sync_enabled: true
+      };
     }
+
+    setAccounts((prev) => [...prev, finalAccount]);
+    setActiveAccountId(finalAccount.id);
+    setNewAccName('');
+    setNewAccBalance('');
+    setMt5Login('');
+    setMt5InvestorPassword('');
+    setMt5Server('');
+    setAccountCreating(false);
+    setIsAccountModalOpen(false);
   };
 
   const handleLogTrade = async (e) => {
     e.preventDefault();
-    setTradeError('');
-    if (tradeSubmitting) return;
-    const currentTradingDay = getTradingDayInfo(new Date());
-    if (currentTradingDay.isWeekend) {
-      setIsTradeModalOpen(false);
-      setIsWeekendNoticeOpen(true);
-      return;
-    }
-    if (!activeAccount || !session?.user) {
-      setTradeError('You need an active account and signed-in session to save a trade.');
-      return;
-    }
-    const lotsVal = parseFloat(tradeLots);
+    if (!activeAccount || !session?.user) return;
     const pnlVal = parseFloat(tradePnl);
-    if (!tradeDate || tradeDate !== currentTradingDay.date) {
-      setTradeError('Trades can only be logged for today.');
-      return;
-    }
-    if (
-      !tradeAsset.trim() ||
-      !Number.isFinite(lotsVal) ||
-      lotsVal <= 0 ||
-      !Number.isFinite(pnlVal)
-    ) {
-      setTradeError('Enter an asset, positive lot size, and valid PnL amount.');
-      return;
-    }
+    const lotsVal = parseFloat(tradeLots);
+    if (!tradeDate || !tradeAsset.trim() || isNaN(pnlVal) || isNaN(lotsVal)) return;
 
-    setTradeSubmitting(true);
-    try {
-      const { data, error } = await supabase
-        .from('trades')
-        .insert([
-          {
-            user_id: session.user.id,
-            account_id: activeAccount.id,
-            date: tradeDate,
-            asset: tradeAsset.trim().toUpperCase(),
-            direction: tradeDirection,
-            lots: lotsVal,
-            pnl: pnlVal
-          }
-        ])
-        .select()
-        .single();
+    const { data, error } = await supabase
+      .from('trades')
+      .insert([
+        {
+          user_id: session.user.id,
+          account_id: activeAccount.id,
+          date: tradeDate,
+          asset: tradeAsset.trim().toUpperCase(),
+          direction: tradeDirection,
+          lots: lotsVal.toFixed(2),
+          pnl: pnlVal
+        }
+      ])
+      .select()
+      .single();
 
-      if (error) {
-        setTradeError(`Could not save trade: ${error.message}`);
-        return;
-      }
-      if (!data) {
-        setTradeError('Could not save trade: no trade record was returned.');
-        return;
-      }
-
+    if (!error && data) {
       setTrades((prev) => [data, ...prev]);
-      setTradeLots('');
       setTradePnl('');
       setIsTradeModalOpen(false);
-    } catch (error) {
-      setTradeError(
-        `Could not save trade: ${
-          error instanceof Error ? error.message : 'An unexpected error occurred.'
-        }`
-      );
-    } finally {
-      setTradeSubmitting(false);
     }
-  };
-
-  const handleOpenTradeModal = () => {
-    const currentTradingDay = getTradingDayInfo(new Date());
-    if (currentTradingDay.isWeekend) {
-      setIsWeekendNoticeOpen(true);
-      return;
-    }
-
-    setTradeDate(currentTradingDay.date);
-    setTradeError('');
-    setIsTradeModalOpen(true);
   };
 
   // --- Active Account & Metrics Calculations ---
-  const activeAccount = useMemo(
-    () => accounts.find((a) => a.id === activeAccountId) || null,
-    [accounts, activeAccountId]
-  );
-
   const accountTrades = useMemo(() => {
     if (!activeAccount) return [];
     return trades
@@ -501,26 +487,7 @@ export default function App() {
       });
     }
 
-    const weeks = [];
-    for (let index = 0; index < cells.length; index += 7) {
-      const weekCells = cells.slice(index, index + 7);
-      const hasDay = weekCells.some((cell) => cell.type === 'day');
-      if (!hasDay) continue;
-
-      const pnl = weekCells.reduce(
-        (sum, cell) => sum + (cell.type === 'day' && cell.pnl !== undefined ? cell.pnl : 0),
-        0
-      );
-      const firstDay = weekCells.find((cell) => cell.type === 'day')?.day;
-      const lastDay = [...weekCells].reverse().find((cell) => cell.type === 'day')?.day;
-      weeks.push({
-        key: `week-${index}`,
-        label: firstDay === lastDay ? `${monthName} ${firstDay}` : `${monthName} ${firstDay}-${lastDay}`,
-        pnl
-      });
-    }
-
-    return { year, monthName, cells, weeks };
+    return { year, monthName, cells };
   }, [currentDate, metrics.dailyMap]);
 
   const changeMonth = (offset) => {
@@ -715,61 +682,53 @@ export default function App() {
           <div className="border-b border-zinc-800/80 pt-1" />
         </header>
 
-        {/* RIGHT-ALIGNED COMPACT ACCOUNT BAR */}
-        <div className="flex justify-end">
-          <div className="inline-flex items-center gap-2 bg-zinc-900 border border-zinc-800 rounded-xl p-1.5">
-            <div ref={accountDropdownRef} className="relative">
-              <button
-                type="button"
-                onClick={() => setIsAccountDropdownOpen((open) => !open)}
-                disabled={accounts.length === 0 || dataLoading}
-                className={`bg-zinc-950 text-sm font-medium text-zinc-100 px-3 py-1.5 rounded-lg border focus:outline-none min-w-[140px] text-left ${
-                  activeAccount
-                    ? 'border-emerald-500/40 ring-1 ring-emerald-500/20 shadow-[0_0_10px_rgba(16,185,129,0.12)]'
-                    : 'border-zinc-800 focus:border-zinc-700'
-                }`}
-              >
-                {activeAccount?.name || (dataLoading ? 'Syncing...' : 'No Account')}
-              </button>
-              {isAccountDropdownOpen && accounts.length > 0 && (
-                <div className="absolute right-0 mt-1.5 z-30 w-56 bg-zinc-950 border border-zinc-800 rounded-xl p-1 shadow-xl">
-                  {accounts.map((acc) => (
-                    <div
-                      key={acc.id}
-                      className={`flex items-center justify-between rounded-lg px-2 py-1.5 ${
-                        acc.id === activeAccountId ? 'bg-zinc-800' : 'hover:bg-zinc-900'
-                      }`}
-                    >
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setActiveAccountId(acc.id);
-                          setIsAccountDropdownOpen(false);
-                        }}
-                        className="flex-1 text-left text-sm text-zinc-100 truncate"
-                      >
-                        {acc.name}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setAccountToDelete(acc);
-                          setDeleteAccountError('');
-                          setIsAccountDropdownOpen(false);
-                        }}
-                        className="ml-2 p-0.5 text-rose-500 hover:text-rose-400"
-                        title={`Delete ${acc.name}`}
-                        aria-label={`Delete ${acc.name}`}
-                      >
-                        <X className="w-3 h-3" />
-                      </button>
-                    </div>
-                  ))}
-                </div>
+        {/* ACCOUNT & MT5 AUTO-SYNC BAR */}
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
+            {activeAccount?.auto_sync_enabled && (
+              <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-emerald-500/10 border border-emerald-500/25 text-xs text-emerald-300">
+                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                <span className="font-medium">
+                  MT5 Auto-Sync ({activeAccount.mt5_login})
+                </span>
+                <button
+                  onClick={() => triggerMt5Sync(activeAccount.id, false)}
+                  disabled={isSyncingMt5}
+                  className="ml-1 inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-200 font-semibold transition-colors disabled:opacity-50"
+                  title="Sync closed MT5 trades now"
+                >
+                  <RefreshCw className={`w-3 h-3 ${isSyncingMt5 ? 'animate-spin' : ''}`} />
+                  <span>{isSyncingMt5 ? 'Syncing' : 'Sync Now'}</span>
+                </button>
+              </div>
+            )}
+            {syncMessage && (
+              <span className="text-xs text-zinc-400">{syncMessage}</span>
+            )}
+          </div>
+
+          <div className="inline-flex items-center gap-2 bg-zinc-900 border border-zinc-800 rounded-xl p-1.5 ml-auto">
+            <select
+              value={activeAccountId}
+              onChange={(e) => setActiveAccountId(e.target.value)}
+              className="bg-zinc-950 text-sm font-medium text-zinc-100 px-3 py-1.5 rounded-lg border border-zinc-800 focus:outline-none focus:border-zinc-700"
+              disabled={accounts.length === 0 || dataLoading}
+            >
+              {accounts.length === 0 ? (
+                <option value="">{dataLoading ? 'Syncing...' : 'No Account'}</option>
+              ) : (
+                accounts.map((acc) => (
+                  <option key={acc.id} value={acc.id}>
+                    {acc.name}
+                  </option>
+                ))
               )}
-            </div>
+            </select>
             <button
-              onClick={() => setIsAccountModalOpen(true)}
+              onClick={() => {
+                setAccountError('');
+                setIsAccountModalOpen(true);
+              }}
               className="p-1.5 bg-emerald-500 hover:bg-emerald-400 text-zinc-950 rounded-lg transition-colors"
               title="Add New Account"
             >
@@ -783,7 +742,9 @@ export default function App() {
           <div className="bg-zinc-900/80 border border-zinc-800 rounded-2xl p-5 flex items-center justify-between">
             <div>
               <p className="text-xs font-medium uppercase tracking-wider text-zinc-400">Equity</p>
-              <p className="text-2xl font-bold text-white mt-1">{formatCurrency(metrics.equity)}</p>
+              <p className="text-2xl font-bold text-white mt-1 tabular-nums">
+                {formatCurrency(metrics.equity)}
+              </p>
             </div>
             <div className="p-3 bg-zinc-800/70 rounded-xl text-zinc-300">
               <DollarSign className="w-5 h-5" />
@@ -794,7 +755,7 @@ export default function App() {
             <div>
               <p className="text-xs font-medium uppercase tracking-wider text-zinc-400">Net PnL</p>
               <p
-                className={`text-2xl font-bold mt-1 ${
+                className={`text-2xl font-bold mt-1 tabular-nums ${
                   metrics.netPnl > 0
                     ? 'text-emerald-400'
                     : metrics.netPnl < 0
@@ -825,7 +786,7 @@ export default function App() {
           <div className="bg-zinc-900/80 border border-zinc-800 rounded-2xl p-5 flex items-center justify-between">
             <div>
               <p className="text-xs font-medium uppercase tracking-wider text-zinc-400">Win Rate</p>
-              <p className="text-2xl font-bold text-white mt-1">{metrics.winRate}%</p>
+              <p className="text-2xl font-bold text-white mt-1 tabular-nums">{metrics.winRate}%</p>
             </div>
             <div className="p-3 bg-zinc-800/70 rounded-xl text-zinc-300">
               <Activity className="w-5 h-5" />
@@ -835,7 +796,7 @@ export default function App() {
           <div className="bg-zinc-900/80 border border-zinc-800 rounded-2xl p-5 flex items-center justify-between">
             <div>
               <p className="text-xs font-medium uppercase tracking-wider text-zinc-400">Best Day</p>
-              <p className="text-2xl font-bold text-emerald-400 mt-1">
+              <p className="text-2xl font-bold text-emerald-400 mt-1 tabular-nums">
                 {formatCurrency(metrics.bestDay)}
               </p>
             </div>
@@ -855,7 +816,7 @@ export default function App() {
               <p className="text-xs font-medium uppercase tracking-wider text-zinc-400">
                 15% Consistency Score
               </p>
-              <p className="text-2xl font-bold text-white mt-1">
+              <p className="text-2xl font-bold text-white mt-1 tabular-nums">
                 {formatCurrency(metrics.consistencyTarget)}
               </p>
             </div>
@@ -888,8 +849,8 @@ export default function App() {
           <div className="p-5 border-b border-zinc-800 flex items-center justify-between">
             <h2 className="text-base font-semibold text-white">Trade Log</h2>
             <button
-              onClick={handleOpenTradeModal}
-              disabled={!activeAccount && !tradingDayInfo.isWeekend}
+              onClick={() => setIsTradeModalOpen(true)}
+              disabled={!activeAccount}
               className="inline-flex items-center gap-1.5 px-3.5 py-1.5 bg-emerald-500 hover:bg-emerald-400 disabled:opacity-40 text-zinc-950 text-sm font-semibold rounded-lg transition-colors"
             >
               <PlusCircle className="w-4 h-4" />
@@ -904,13 +865,14 @@ export default function App() {
                   <th className="py-3 px-4">Date</th>
                   <th className="py-3 px-4">Asset</th>
                   <th className="py-3 px-4">Direction</th>
+                  <th className="py-3 px-4">Lots</th>
                   <th className="py-3 px-4 text-right">PnL</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-zinc-800/60 text-sm">
                 {accountTrades.length === 0 ? (
                   <tr>
-                    <td colSpan="4" className="py-8 text-center text-zinc-500">
+                    <td colSpan="5" className="py-8 text-center text-zinc-500">
                       {dataLoading
                         ? 'Loading synced trades...'
                         : 'No trades logged for this account yet.'}
@@ -922,7 +884,16 @@ export default function App() {
                     return (
                       <tr key={trade.id} className="hover:bg-zinc-800/30 transition-colors">
                         <td className="py-3 px-4 font-mono text-xs text-zinc-300">{trade.date}</td>
-                        <td className="py-3 px-4 font-semibold text-white">{trade.asset}</td>
+                        <td className="py-3 px-4 font-semibold text-white">
+                          <div className="flex items-center gap-2">
+                            <span>{trade.asset}</span>
+                            {trade.mt5_deal_id && (
+                              <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-zinc-800 text-zinc-400">
+                                MT5
+                              </span>
+                            )}
+                          </div>
+                        </td>
                         <td className="py-3 px-4">
                           <span
                             className={`px-2 py-0.5 text-xs font-bold rounded ${
@@ -934,8 +905,11 @@ export default function App() {
                             {trade.direction}
                           </span>
                         </td>
+                        <td className="py-3 px-4 font-mono text-zinc-300 tabular-nums">
+                          {trade.lots}
+                        </td>
                         <td
-                          className={`py-3 px-4 text-right font-mono font-semibold ${
+                          className={`py-3 px-4 text-right font-mono font-semibold tabular-nums ${
                             isProfit ? 'text-emerald-400' : 'text-rose-400'
                           }`}
                         >
@@ -978,96 +952,50 @@ export default function App() {
             </div>
           </div>
 
-          <div className="grid grid-cols-8 gap-1.5 text-center text-xs font-semibold text-zinc-500 pt-2">
+          <div className="grid grid-cols-7 gap-1.5 text-center text-xs font-semibold text-zinc-500 pt-2">
             {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day) => (
               <div key={day} className="py-1">
                 {day}
               </div>
             ))}
-            <div className="py-1 text-[10px] uppercase">Weekly PnL</div>
           </div>
 
-          <div className="space-y-1.5">
-            {Array.from({ length: Math.ceil(calendarData.cells.length / 7)}, (_, rowIndex) => {
-              const weekCells = calendarData.cells.slice(rowIndex * 7, rowIndex * 7 + 7);
-              const weekPnl = weekCells.reduce(
-                (sum, cell) => sum + (cell.type === 'day' && cell.pnl !== undefined ? cell.pnl : 0),
-                0
-              );
+          <div className="grid grid-cols-7 gap-1.5">
+            {calendarData.cells.map((cell) => {
+              if (cell.type === 'empty') {
+                return (
+                  <div
+                    key={cell.key}
+                    className="h-16 md:h-20 rounded-xl bg-zinc-950/30 border border-zinc-900/50"
+                  />
+                );
+              }
+
+              const hasPnl = cell.pnl !== undefined;
+              const isPos = hasPnl && cell.pnl > 0;
+              const isNeg = hasPnl && cell.pnl < 0;
 
               return (
-                <div key={`week-row-${rowIndex}`} className="grid grid-cols-8 gap-1.5">
-                  {weekCells.map((cell) => {
-                    if (cell.type === 'empty') {
-                      return (
-                        <div
-                          key={cell.key}
-                          className="h-16 md:h-20 rounded-xl bg-zinc-950/30 border border-zinc-900/50"
-                        />
-                      );
-                    }
-
-                    const hasPnl = cell.pnl !== undefined;
-                    const isPos = hasPnl && cell.pnl > 0;
-                    const isNeg = hasPnl && cell.pnl < 0;
-                    const isToday = cell.dateStr === tradingDayInfo.date;
-
-                    return (
-                      <div
-                        key={cell.key}
-                        className={`h-16 md:h-20 rounded-xl border p-2 flex flex-col justify-between transition-colors ${
-                          isPos
-                            ? 'bg-emerald-500/10 border-emerald-500/30'
-                            : isNeg
-                            ? 'bg-rose-500/10 border-rose-500/30'
-                            : 'bg-zinc-950/70 border-zinc-800/80'
-                        } ${
-                          isToday
-                            ? 'ring-1 ring-emerald-500/35 shadow-[0_0_10px_rgba(16,185,129,0.12)]'
-                            : ''
-                        }`}
-                      >
-                        <span className="text-xs font-medium text-zinc-400">{cell.day}</span>
-                        {hasPnl && (
-                          <span
-                            className={`text-xs md:text-sm font-mono font-bold truncate ${
-                              isPos ? 'text-emerald-400' : isNeg ? 'text-rose-400' : 'text-zinc-300'
-                            }`}
-                          >
-                            {formatCompactPnl(cell.pnl)}
-                          </span>
-                        )}
-                      </div>
-                    );
-                  })}
-                  {weekCells.length < 7 &&
-                    Array.from({ length: 7 - weekCells.length }, (_, index) => (
-                      <div
-                        key={`week-end-empty-${index}`}
-                        className="h-16 md:h-20 rounded-xl bg-zinc-950/30 border border-zinc-900/50"
-                      />
-                    ))}
-                  <div
-                    className={`h-16 md:h-20 rounded-xl border p-2 flex flex-col justify-center items-center ${
-                      weekPnl > 0
-                        ? 'bg-emerald-500/10 border-emerald-500/30'
-                        : weekPnl < 0
-                        ? 'bg-rose-500/10 border-rose-500/30'
-                        : 'bg-zinc-950/70 border-zinc-800/80'
-                    }`}
-                  >
+                <div
+                  key={cell.key}
+                  className={`h-16 md:h-20 rounded-xl border p-2 flex flex-col justify-between transition-colors ${
+                    isPos
+                      ? 'bg-emerald-500/10 border-emerald-500/30'
+                      : isNeg
+                      ? 'bg-rose-500/10 border-rose-500/30'
+                      : 'bg-zinc-950/70 border-zinc-800/80'
+                  }`}
+                >
+                  <span className="text-xs font-medium text-zinc-400">{cell.day}</span>
+                  {hasPnl && (
                     <span
-                      className={`text-xs md:text-sm font-mono font-bold text-center ${
-                        weekPnl > 0
-                          ? 'text-emerald-400'
-                          : weekPnl < 0
-                          ? 'text-rose-400'
-                          : 'text-zinc-300'
+                      className={`text-xs md:text-sm font-mono font-bold truncate tabular-nums ${
+                        isPos ? 'text-emerald-400' : isNeg ? 'text-rose-400' : 'text-zinc-300'
                       }`}
                     >
-                      {formatCurrency(weekPnl)}
+                      {formatCompactPnl(cell.pnl)}
                     </span>
-                  </div>
+                  )}
                 </div>
               );
             })}
@@ -1075,15 +1003,10 @@ export default function App() {
         </section>
       </div>
 
-      {/* ADD ACCOUNT MODAL */}
+      {/* ADD ACCOUNT MODAL (WITH MT5 AUTO-SYNC CREDENTIALS) */}
       {isAccountModalOpen && (
-        <div
-          className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4"
-          onClick={(e) => {
-            if (e.target === e.currentTarget) setIsAccountModalOpen(false);
-          }}
-        >
-          <div className="bg-zinc-900 border border-zinc-800 rounded-2xl w-full max-w-md p-6 space-y-5">
+        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-zinc-900 border border-zinc-800 rounded-2xl w-full max-w-md p-6 space-y-5 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between">
               <h3 className="text-lg font-bold text-white">Add Trading Account</h3>
               {accounts.length > 0 && (
@@ -1127,36 +1050,113 @@ export default function App() {
                 />
               </div>
 
+              {/* MT5 Auto-Sync Toggle */}
+              <div className="pt-2 border-t border-zinc-800/80 space-y-3">
+                <label className="flex items-center justify-between cursor-pointer">
+                  <div>
+                    <span className="text-sm font-semibold text-white block">
+                      Connect MT5 Auto-Sync
+                    </span>
+                    <span className="text-xs text-zinc-400">
+                      Read-only investor access for automatic trade logging
+                    </span>
+                  </div>
+                  <input
+                    type="checkbox"
+                    checked={enableMt5Sync}
+                    onChange={(e) => setEnableMt5Sync(e.target.checked)}
+                    className="w-4 h-4 accent-emerald-500 rounded"
+                  />
+                </label>
+
+                {enableMt5Sync && (
+                  <div className="space-y-3 bg-zinc-950/70 border border-zinc-800/80 rounded-xl p-3.5">
+                    <div>
+                      <label className="block text-xs font-medium text-zinc-400 mb-1">
+                        MT5 Login ID
+                      </label>
+                      <input
+                        type="text"
+                        required={enableMt5Sync}
+                        placeholder="e.g. 51294810"
+                        value={mt5Login}
+                        onChange={(e) => setMt5Login(e.target.value)}
+                        className="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-white font-mono focus:outline-none focus:border-emerald-500"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-medium text-zinc-400 mb-1">
+                        Investor Password (Read-Only)
+                      </label>
+                      <input
+                        type="password"
+                        required={enableMt5Sync}
+                        placeholder="Enter read-only investor password"
+                        value={mt5InvestorPassword}
+                        onChange={(e) => setMt5InvestorPassword(e.target.value)}
+                        className="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-emerald-500"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-medium text-zinc-400 mb-1">
+                        Broker Server
+                      </label>
+                      <div className="relative">
+                        <Server className="w-3.5 h-3.5 text-zinc-500 absolute left-3 top-2.5" />
+                        <input
+                          type="text"
+                          required={enableMt5Sync}
+                          placeholder="e.g. FTMO-Server3 or Exness-MT5Real7"
+                          value={mt5Server}
+                          onChange={(e) => setMt5Server(e.target.value)}
+                          className="w-full bg-zinc-900 border border-zinc-800 rounded-lg pl-8 pr-3 py-2 text-sm text-white focus:outline-none focus:border-emerald-500"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="flex items-start gap-2 text-[11px] text-zinc-400 pt-1">
+                      <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
+                      <span>
+                        Use your <strong>Investor Password</strong> only. It grants read-only
+                        history access and cannot place or modify trades.
+                      </span>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {accountError && (
+                <p className="text-xs text-rose-400 bg-rose-500/10 border border-rose-500/20 rounded-lg px-3 py-2">
+                  {accountError}
+                </p>
+              )}
+
               <button
                 type="submit"
-                className="w-full py-2.5 bg-emerald-500 hover:bg-emerald-400 text-zinc-950 font-bold text-sm rounded-xl transition-colors"
+                disabled={accountCreating}
+                className="w-full py-2.5 bg-emerald-500 hover:bg-emerald-400 disabled:opacity-50 text-zinc-950 font-bold text-sm rounded-xl transition-colors"
               >
-                Save
+                {accountCreating
+                  ? 'Connecting to MT5...'
+                  : enableMt5Sync
+                  ? 'Connect & Save Account'
+                  : 'Create Account'}
               </button>
             </form>
           </div>
         </div>
       )}
 
-      {/* LOG TRADE MODAL */}
+      {/* MANUAL LOG TRADE MODAL */}
       {isTradeModalOpen && (
-        <div
-          className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4"
-          onClick={(e) => {
-            if (e.target === e.currentTarget && !tradeSubmitting) {
-              setIsTradeModalOpen(false);
-              setTradeError('');
-            }
-          }}
-        >
+        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-zinc-900 border border-zinc-800 rounded-2xl w-full max-w-md p-6 space-y-5">
             <div className="flex items-center justify-between">
-              <h3 className="text-lg font-bold text-white">Log Trade</h3>
+              <h3 className="text-lg font-bold text-white">Log Manual Trade</h3>
               <button
-                onClick={() => {
-                  setIsTradeModalOpen(false);
-                  setTradeError('');
-                }}
+                onClick={() => setIsTradeModalOpen(false)}
                 className="text-zinc-400 hover:text-white"
               >
                 <X className="w-5 h-5" />
@@ -1164,180 +1164,80 @@ export default function App() {
             </div>
 
             <form onSubmit={handleLogTrade} className="space-y-4">
-              <div>
-                <label className="block text-xs font-medium text-zinc-400 mb-1.5">Date</label>
-                <input
-                  type="date"
-                  required
-                  min={tradingDayInfo.date}
-                  max={tradingDayInfo.date}
-                  value={tradeDate}
-                  onChange={(e) => setTradeDate(e.target.value)}
-                  className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3.5 py-2.5 text-sm text-white focus:outline-none focus:border-emerald-500"
-                />
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-medium text-zinc-400 mb-1.5">Date</label>
+                  <input
+                    type="date"
+                    required
+                    value={tradeDate}
+                    onChange={(e) => setTradeDate(e.target.value)}
+                    className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-emerald-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-zinc-400 mb-1.5">Asset</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="XAUUSD"
+                    value={tradeAsset}
+                    onChange={(e) => setTradeAsset(e.target.value)}
+                    className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-sm text-white uppercase focus:outline-none focus:border-emerald-500"
+                  />
+                </div>
               </div>
 
-              <div>
-                <label className="block text-xs font-medium text-zinc-400 mb-1.5">Asset</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="e.g. XAUUSD, EURUSD, BTCUSD"
-                  value={tradeAsset}
-                  onChange={(e) => setTradeAsset(e.target.value)}
-                  className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3.5 py-2.5 text-sm text-white uppercase focus:outline-none focus:border-emerald-500"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-medium text-zinc-400 mb-1.5">
-                  Direction
-                </label>
-                <div className="grid grid-cols-2 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setTradeDirection('BUY')}
-                    className={`py-2.5 rounded-xl text-sm font-bold transition-colors ${
-                      tradeDirection === 'BUY'
-                        ? 'bg-emerald-500 text-zinc-950'
-                        : 'bg-zinc-950 border border-zinc-800 text-emerald-400'
-                    }`}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-medium text-zinc-400 mb-1.5">
+                    Direction
+                  </label>
+                  <select
+                    value={tradeDirection}
+                    onChange={(e) => setTradeDirection(e.target.value)}
+                    className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-emerald-500"
                   >
-                    BUY
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setTradeDirection('SELL')}
-                    className={`py-2.5 rounded-xl text-sm font-bold transition-colors ${
-                      tradeDirection === 'SELL'
-                        ? 'bg-rose-500 text-white'
-                        : 'bg-zinc-950 border border-zinc-800 text-rose-400'
-                    }`}
-                  >
-                    SELL
-                  </button>
+                    <option value="BUY">BUY</option>
+                    <option value="SELL">SELL</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-zinc-400 mb-1.5">Lots</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0.01"
+                    required
+                    value={tradeLots}
+                    onChange={(e) => setTradeLots(e.target.value)}
+                    className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-emerald-500"
+                  />
                 </div>
               </div>
 
               <div>
-                <label className="block text-xs font-medium text-zinc-400 mb-1.5">Lots</label>
-                <input
-                  type="number"
-                  min="0"
-                  step="any"
-                  required
-                  placeholder="e.g. 0.10"
-                  value={tradeLots}
-                  onChange={(e) => setTradeLots(e.target.value)}
-                  className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3.5 py-2.5 text-sm text-white focus:outline-none focus:border-emerald-500"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-medium text-zinc-400 mb-1.5">PnL ($)</label>
+                <label className="block text-xs font-medium text-zinc-400 mb-1.5">
+                  Net PnL ($)
+                </label>
                 <input
                   type="number"
                   step="any"
                   required
-                  placeholder="e.g. 450 or -120"
+                  placeholder="e.g. 240.50 or -115.00"
                   value={tradePnl}
                   onChange={(e) => setTradePnl(e.target.value)}
                   className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3.5 py-2.5 text-sm text-white focus:outline-none focus:border-emerald-500"
                 />
               </div>
 
-              {tradeError && (
-                <p role="alert" className="text-sm text-rose-400">
-                  {tradeError}
-                </p>
-              )}
-
               <button
                 type="submit"
-                disabled={tradeSubmitting}
-                className="w-full py-2.5 bg-emerald-500 hover:bg-emerald-400 disabled:opacity-60 text-zinc-950 font-bold text-sm rounded-xl transition-colors"
+                className="w-full py-2.5 bg-emerald-500 hover:bg-emerald-400 text-zinc-950 font-bold text-sm rounded-xl transition-colors"
               >
-                {tradeSubmitting ? 'Saving...' : 'Save Trade'}
+                Save Trade
               </button>
             </form>
-          </div>
-        </div>
-      )}
-
-      {isWeekendNoticeOpen && (
-        <div
-          className="fixed inset-0 z-[60] bg-black/75 backdrop-blur-sm flex items-center justify-center p-4"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="weekend-notice-title"
-          onClick={(e) => {
-            if (e.target === e.currentTarget) setIsWeekendNoticeOpen(false);
-          }}
-        >
-          <div className="bg-zinc-900 border border-zinc-800 rounded-2xl w-full max-w-sm p-6 text-center space-y-4">
-            <h3 id="weekend-notice-title" className="text-lg font-bold text-white">
-              Enjoy Your Weekend
-            </h3>
-            <p className="text-sm text-zinc-400">
-              Weekends Are For Relaxing Boss. Have Fun
-            </p>
-            <button
-              type="button"
-              onClick={() => setIsWeekendNoticeOpen(false)}
-              className="w-full py-2.5 bg-emerald-500 hover:bg-emerald-400 text-zinc-950 font-bold text-sm rounded-xl transition-colors"
-            >
-              Close
-            </button>
-          </div>
-        </div>
-      )}
-
-      {accountToDelete && (
-        <div
-          className="fixed inset-0 z-[60] bg-black/75 backdrop-blur-sm flex items-center justify-center p-4"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="delete-account-title"
-          onClick={(e) => {
-            if (e.target === e.currentTarget && !deleteAccountSubmitting) {
-              setAccountToDelete(null);
-              setDeleteAccountError('');
-            }
-          }}
-        >
-          <div className="bg-zinc-900 border border-zinc-800 rounded-2xl w-full max-w-sm p-6 text-center space-y-4">
-            <h3 id="delete-account-title" className="text-lg font-bold text-white">
-              Delete {accountToDelete.name}
-            </h3>
-            <p className="text-sm text-zinc-400">
-              This will permanently delete the account and all its trades.
-            </p>
-            {deleteAccountError && (
-              <p role="alert" className="text-sm text-rose-400">
-                {deleteAccountError}
-              </p>
-            )}
-            <div className="grid grid-cols-2 gap-3">
-              <button
-                type="button"
-                disabled={deleteAccountSubmitting}
-                onClick={() => {
-                  setAccountToDelete(null);
-                  setDeleteAccountError('');
-                }}
-                className="w-full py-2.5 bg-zinc-800 hover:bg-zinc-700 disabled:opacity-60 text-white font-bold text-sm rounded-xl transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                disabled={deleteAccountSubmitting}
-                onClick={handleDeleteAccount}
-                className="w-full py-2.5 bg-rose-500 hover:bg-rose-400 disabled:opacity-60 text-white font-bold text-sm rounded-xl transition-colors"
-              >
-                {deleteAccountSubmitting ? 'Deleting...' : 'Confirm'}
-              </button>
-            </div>
           </div>
         </div>
       )}
