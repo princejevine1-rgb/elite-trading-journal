@@ -1058,7 +1058,12 @@ export default function App() {
 
       {/* ADD ACCOUNT MODAL */}
       {isAccountModalOpen && (
-        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
+        <div
+          className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setIsAccountModalOpen(false);
+          }}
+        >
           <div className="bg-zinc-900 border border-zinc-800 rounded-2xl w-full max-w-md p-6 space-y-5">
             <div className="flex items-center justify-between">
               <h3 className="text-lg font-bold text-white">Add Trading Account</h3>
@@ -1116,7 +1121,15 @@ export default function App() {
 
       {/* LOG TRADE MODAL */}
       {isTradeModalOpen && (
-        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
+        <div
+          className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4"
+          onClick={(e) => {
+            if (e.target === e.currentTarget && !tradeSubmitting) {
+              setIsTradeModalOpen(false);
+              setTradeError('');
+            }
+          }}
+        >
           <div className="bg-zinc-900 border border-zinc-800 rounded-2xl w-full max-w-md p-6 space-y-5">
             <div className="flex items-center justify-between">
               <h3 className="text-lg font-bold text-white">Log Trade</h3>
@@ -1238,6 +1251,9 @@ export default function App() {
           role="dialog"
           aria-modal="true"
           aria-labelledby="weekend-notice-title"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setIsWeekendNoticeOpen(false);
+          }}
         >
           <div className="bg-zinc-900 border border-zinc-800 rounded-2xl w-full max-w-sm p-6 text-center space-y-4">
             <h3 id="weekend-notice-title" className="text-lg font-bold text-white">
@@ -1263,6 +1279,12 @@ export default function App() {
           role="dialog"
           aria-modal="true"
           aria-labelledby="delete-account-title"
+          onClick={(e) => {
+            if (e.target === e.currentTarget && !deleteAccountSubmitting) {
+              setAccountToDelete(null);
+              setDeleteAccountError('');
+            }
+          }}
         >
           <div className="bg-zinc-900 border border-zinc-800 rounded-2xl w-full max-w-sm p-6 text-center space-y-4">
             <h3 id="delete-account-title" className="text-lg font-bold text-white">
