@@ -719,7 +719,9 @@ export default function App() {
                     <div
                       key={acc.id}
                       className={`flex items-center justify-between rounded-lg px-2 py-1.5 ${
-                        acc.id === activeAccountId ? 'bg-zinc-800' : 'hover:bg-zinc-900'
+                        acc.id === activeAccountId
+                          ? 'bg-emerald-500/10 ring-1 ring-emerald-500/30 shadow-[0_0_10px_rgba(16,185,129,0.14)]'
+                          : 'hover:bg-zinc-900'
                       }`}
                     >
                       <button
