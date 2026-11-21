@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { supabase } from './supabaseClient';
 import {
   Plus,
@@ -62,6 +62,7 @@ export default function App() {
   const [deleteAccountError, setDeleteAccountError] = useState('');
   const [deleteAccountSubmitting, setDeleteAccountSubmitting] = useState(false);
   const [isAccountDropdownOpen, setIsAccountDropdownOpen] = useState(false);
+  const accountDropdownRef = useRef(null);
 
   // --- Form States ---
   const [newAccName, setNewAccName] = useState('');
@@ -95,6 +96,19 @@ export default function App() {
 
     return () => subscription.unsubscribe();
   }, []);
+
+  useEffect(() => {
+    if (!isAccountDropdownOpen) return;
+
+    const handleOutsidePointerDown = (event) => {
+      if (!accountDropdownRef.current?.contains(event.target)) {
+        setIsAccountDropdownOpen(false);
+      }
+    };
+
+    document.addEventListener('pointerdown', handleOutsidePointerDown);
+    return () => document.removeEventListener('pointerdown', handleOutsidePointerDown);
+  }, [isAccountDropdownOpen]);
 
   // 2. Fetch User's Accounts & Trades from Supabase once logged in
   useEffect(() => {
@@ -704,7 +718,7 @@ export default function App() {
         {/* RIGHT-ALIGNED COMPACT ACCOUNT BAR */}
         <div className="flex justify-end">
           <div className="inline-flex items-center gap-2 bg-zinc-900 border border-zinc-800 rounded-xl p-1.5">
-            <div className="relative">
+            <div ref={accountDropdownRef} className="relative">
               <button
                 type="button"
                 onClick={() => setIsAccountDropdownOpen((open) => !open)}
