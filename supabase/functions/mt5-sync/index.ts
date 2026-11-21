@@ -56,7 +56,6 @@ Deno.serve(async (req) => {
         throw new Error('Account ID, MT5 Login, Investor Password, and Server are required.');
       }
 
-      // 1. Provision read-only MT5 account on MetaApi
       const provisionRes = await fetch(`${PROVISIONING_BASE}/users/current/accounts`, {
         method: 'POST',
         headers: {
@@ -82,13 +81,11 @@ Deno.serve(async (req) => {
 
       const metaapiAccountId = provisionData.id;
 
-      // 2. Deploy the MetaApi cloud terminal
       await fetch(`${PROVISIONING_BASE}/users/current/accounts/${metaapiAccountId}/deploy`, {
         method: 'POST',
         headers: { 'auth-token': metaApiToken },
       });
 
-      // 3. Save MetaApi reference to Supabase (password is discarded)
       const { error: updateErr } = await supabase
         .from('trading_accounts')
         .update({
@@ -108,7 +105,7 @@ Deno.serve(async (req) => {
       );
     }
 
-    // --- ACTION 2: SYNC CLOSED DEALS ---
+    // --- ACTION 2: SYNC CLOSED DEALS WITH ENP & EXP ---
     if (action === 'sync') {
       const { accountId } = body;
 
@@ -141,19 +138,43 @@ Deno.serve(async (req) => {
         );
       }
 
-      // Keep only closed trade deals (DEAL_ENTRY_OUT / DEAL_ENTRY_INOUT)
-      const closedDeals = (Array.isArray(deals) ? deals : []).filter(
+      const allDeals = Array.isArray(deals) ? deals : [];
+
+      // 1. Map opening deals by positionId so we can look up each trade's Entry Price (ENP)
+      const entryPriceByPosition = new Map<string, number>();
+      for (const d of allDeals) {
+        if (
+          (d.entryType === 'DEAL_ENTRY_IN' || d.entryType === 'DEAL_ENTRY_INOUT') &&
+          d.positionId &&
+          typeof d.price === 'number'
+        ) {
+          // Keep the first entry deal price for that position
+          if (!entryPriceByPosition.has(String(d.positionId))) {
+            entryPriceByPosition.set(String(d.positionId), d.price);
+          }
+        }
+      }
+
+      // 2. Filter closed exit deals and attach ENP + EXP
+      const closedDeals = allDeals.filter(
         (d) =>
-          (d.entryType === 'DEAL_ENTRY_OUT' || d.entryType === 'DEAL_ENTRY_INOUT') &&
+          (d.entryType === 'DEAL_ENTRY_OUT' ||
+            d.entryType === 'DEAL_ENTRY_INOUT' ||
+            d.entryType === 'DEAL_ENTRY_OUT_BY') &&
           (d.type === 'DEAL_TYPE_BUY' || d.type === 'DEAL_TYPE_SELL')
       );
 
       const rowsToUpsert = closedDeals.map((d) => {
-        // Exit deal type is opposite of original entry direction
         const originalDirection = d.type === 'DEAL_TYPE_SELL' ? 'BUY' : 'SELL';
         const netPnl =
           Number(d.profit || 0) + Number(d.swap || 0) + Number(d.commission || 0);
         const closeDate = (d.time || new Date().toISOString()).split('T')[0];
+
+        const enp =
+          d.positionId && entryPriceByPosition.has(String(d.positionId))
+            ? entryPriceByPosition.get(String(d.positionId))!
+            : null;
+        const exp = typeof d.price === 'number' ? d.price : null;
 
         return {
           user_id: user.id,
@@ -163,16 +184,19 @@ Deno.serve(async (req) => {
           asset: String(d.symbol || 'UNKNOWN').toUpperCase(),
           direction: originalDirection,
           lots: Number(d.volume || 0).toFixed(2),
+          enp,
+          exp,
           pnl: Number(netPnl.toFixed(2)),
         };
       });
 
       if (rowsToUpsert.length > 0) {
+        // Upsert updates existing rows so previously synced trades backfill ENP & EXP
         const { error: upsertErr } = await supabase
           .from('trades')
           .upsert(rowsToUpsert, {
             onConflict: 'account_id,mt5_deal_id',
-            ignoreDuplicates: true,
+            ignoreDuplicates: false,
           });
 
         if (upsertErr) throw upsertErr;

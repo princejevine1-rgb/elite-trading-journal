@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { supabase } from './supabaseClient';
 import {
   Plus,
@@ -14,13 +14,13 @@ import {
   Activity,
   DollarSign,
   Calendar as CalendarIcon,
-  PlusCircle,
   LogOut,
   Lock,
   Mail,
   RefreshCw,
   Server,
-  ShieldCheck
+  ShieldCheck,
+  ChevronDown,
 } from 'lucide-react';
 
 export default function App() {
@@ -45,9 +45,31 @@ export default function App() {
   const [isEditingName, setIsEditingName] = useState(false);
   const [tempName, setTempName] = useState('');
   const [isAccountModalOpen, setIsAccountModalOpen] = useState(false);
-  const [isTradeModalOpen, setIsTradeModalOpen] = useState(false);
+  const [isAccountDropdownOpen, setIsAccountDropdownOpen] = useState(false);
+  const [showAllTrades, setShowAllTrades] = useState(false);
+  const accountDropdownRef = useRef(null);
 
-  // --- Form States ---
+  useEffect(() => {
+    if (!isAccountDropdownOpen) return;
+
+    const handleOutsideClick = (event) => {
+      if (!accountDropdownRef.current?.contains(event.target)) {
+        setIsAccountDropdownOpen(false);
+      }
+    };
+    const handleEscape = (event) => {
+      if (event.key === 'Escape') setIsAccountDropdownOpen(false);
+    };
+
+    document.addEventListener('mousedown', handleOutsideClick);
+    document.addEventListener('keydown', handleEscape);
+    return () => {
+      document.removeEventListener('mousedown', handleOutsideClick);
+      document.removeEventListener('keydown', handleEscape);
+    };
+  }, [isAccountDropdownOpen]);
+
+  // --- Add Account Form States ---
   const [newAccName, setNewAccName] = useState('');
   const [newAccBalance, setNewAccBalance] = useState('');
   const [enableMt5Sync, setEnableMt5Sync] = useState(true);
@@ -56,12 +78,6 @@ export default function App() {
   const [mt5Server, setMt5Server] = useState('');
   const [accountCreating, setAccountCreating] = useState(false);
   const [accountError, setAccountError] = useState('');
-
-  const [tradeDate, setTradeDate] = useState(() => new Date().toISOString().split('T')[0]);
-  const [tradeAsset, setTradeAsset] = useState('XAUUSD');
-  const [tradeDirection, setTradeDirection] = useState('BUY');
-  const [tradeLots, setTradeLots] = useState('0.10');
-  const [tradePnl, setTradePnl] = useState('');
 
   // --- Clock & Calendar ---
   const [now, setNow] = useState(new Date());
@@ -125,7 +141,7 @@ export default function App() {
 
     fetchCloudData();
 
-    // Realtime subscription for automatic trade inserts
+    // Realtime subscription for automatic MT5 trade inserts
     const channel = supabase
       .channel('trades-realtime')
       .on(
@@ -199,6 +215,16 @@ export default function App() {
     session?.user?.user_metadata?.trader_name ||
     session?.user?.email?.split('@')[0] ||
     'Trader';
+
+  // Current EAT date string (YYYY-MM-DD) for dim green edge lighting
+  const todayEatStr = useMemo(() => {
+    return new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Africa/Nairobi',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit'
+    }).format(now);
+  }, [now]);
 
   const eatTimeData = useMemo(() => {
     const formatter = new Intl.DateTimeFormat('en-GB', {
@@ -296,6 +322,12 @@ export default function App() {
     setIsEditingName(false);
   };
 
+  const handleCloseAccountModal = () => {
+    if (accountCreating || accounts.length === 0) return;
+    setIsAccountModalOpen(false);
+    setAccountError('');
+  };
+
   const handleCreateAccount = async (e) => {
     e.preventDefault();
     setAccountError('');
@@ -376,43 +408,18 @@ export default function App() {
     setIsAccountModalOpen(false);
   };
 
-  const handleLogTrade = async (e) => {
-    e.preventDefault();
-    if (!activeAccount || !session?.user) return;
-    const pnlVal = parseFloat(tradePnl);
-    const lotsVal = parseFloat(tradeLots);
-    if (!tradeDate || !tradeAsset.trim() || isNaN(pnlVal) || isNaN(lotsVal)) return;
-
-    const { data, error } = await supabase
-      .from('trades')
-      .insert([
-        {
-          user_id: session.user.id,
-          account_id: activeAccount.id,
-          date: tradeDate,
-          asset: tradeAsset.trim().toUpperCase(),
-          direction: tradeDirection,
-          lots: lotsVal.toFixed(2),
-          pnl: pnlVal
-        }
-      ])
-      .select()
-      .single();
-
-    if (!error && data) {
-      setTrades((prev) => [data, ...prev]);
-      setTradePnl('');
-      setIsTradeModalOpen(false);
-    }
-  };
-
   // --- Active Account & Metrics Calculations ---
   const accountTrades = useMemo(() => {
     if (!activeAccount) return [];
     return trades
       .filter((t) => t.account_id === activeAccount.id)
-      .sort((a, b) => new Date(b.date) - new Date(a.date));
+      .sort(
+        (a, b) =>
+          new Date(b.created_at || b.date) - new Date(a.created_at || a.date) ||
+          new Date(b.date) - new Date(a.date)
+      );
   }, [trades, activeAccount]);
+  const visibleTrades = showAllTrades ? accountTrades : accountTrades.slice(0, 5);
 
   const metrics = useMemo(() => {
     const initial = activeAccount ? Number(activeAccount.initial_balance) : 0;
@@ -424,8 +431,10 @@ export default function App() {
     const winRate = totalTrades > 0 ? Math.round((winningTrades / totalTrades) * 100) : 0;
 
     const dailyMap = {};
+    const dailyTradeCounts = {};
     accountTrades.forEach((t) => {
       dailyMap[t.date] = (dailyMap[t.date] || 0) + Number(t.pnl);
+      dailyTradeCounts[t.date] = (dailyTradeCounts[t.date] || 0) + 1;
     });
     const dailyTotals = Object.values(dailyMap);
     const bestDay = dailyTotals.length > 0 ? Math.max(0, ...dailyTotals) : 0;
@@ -455,11 +464,12 @@ export default function App() {
       consistencyTarget,
       isConsistencyMet,
       mostTraded,
-      dailyMap
+      dailyMap,
+      dailyTradeCounts
     };
   }, [activeAccount, accountTrades]);
 
-  // --- Standard Calendar Grid Logic ---
+  // --- Calendar Grid Grouped by Weeks (Sun-Sat + Weekly PnL Column) ---
   const calendarData = useMemo(() => {
     const year = currentDate.getFullYear();
     const month = currentDate.getMonth();
@@ -468,9 +478,9 @@ export default function App() {
     const firstDayOfWeek = new Date(year, month, 1).getDay();
     const daysInMonth = new Date(year, month + 1, 0).getDate();
 
-    const cells = [];
+    const flatCells = [];
     for (let i = 0; i < firstDayOfWeek; i++) {
-      cells.push({ type: 'empty', key: `empty-${i}` });
+      flatCells.push({ type: 'empty', key: `empty-start-${i}` });
     }
     for (let day = 1; day <= daysInMonth; day++) {
       const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(
@@ -478,17 +488,45 @@ export default function App() {
         '0'
       )}`;
       const dayPnl = metrics.dailyMap[dateStr];
-      cells.push({
+      const tradeCount = metrics.dailyTradeCounts[dateStr] || 0;
+      flatCells.push({
         type: 'day',
         key: dateStr,
         day,
         dateStr,
-        pnl: dayPnl
+        pnl: dayPnl,
+        tradeCount
       });
     }
 
-    return { year, monthName, cells };
-  }, [currentDate, metrics.dailyMap]);
+    // Pad trailing cells so every week row has 7 days (Sun -> Sat)
+    while (flatCells.length % 7 !== 0) {
+      flatCells.push({ type: 'empty', key: `empty-end-${flatCells.length}` });
+    }
+
+    const weeks = [];
+    for (let i = 0; i < flatCells.length; i += 7) {
+      const days = flatCells.slice(i, i + 7);
+      let weekTotal = 0;
+      let hasTrades = false;
+
+      days.forEach((cell) => {
+        if (cell.type === 'day' && cell.pnl !== undefined) {
+          weekTotal += Number(cell.pnl);
+          hasTrades = true;
+        }
+      });
+
+      weeks.push({
+        weekIndex: weeks.length + 1,
+        days,
+        weekTotal,
+        hasTrades
+      });
+    }
+
+    return { year, monthName, weeks };
+  }, [currentDate, metrics.dailyMap, metrics.dailyTradeCounts]);
 
   const changeMonth = (offset) => {
     setCurrentDate((prev) => new Date(prev.getFullYear(), prev.getMonth() + offset, 1));
@@ -507,6 +545,22 @@ export default function App() {
     const abs = Math.abs(val);
     return `${sign}$${abs % 1 === 0 ? abs.toLocaleString() : abs.toFixed(2)}`;
   };
+
+  const formatPrice = (val) => {
+    if (val === null || val === undefined || val === '') return '—';
+    const num = Number(val);
+    if (isNaN(num)) return '—';
+    return num.toLocaleString('en-US', {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 5
+    });
+  };
+
+  const selectorAccountName = activeAccount
+    ? (activeAccount.name || '').trim().split(/\s+/).filter(Boolean).slice(0, 3).join(' ')
+    : dataLoading
+    ? 'Syncing...'
+    : 'No Account';
 
   // --- Loading Screen ---
   if (authLoading) {
@@ -682,7 +736,7 @@ export default function App() {
           <div className="border-b border-zinc-800/80 pt-1" />
         </header>
 
-        {/* ACCOUNT & MT5 AUTO-SYNC BAR */}
+        {/* STYLED ACCOUNT SELECTOR (WITH GREEN EDGE LIGHTING) & MT5 SYNC BAR */}
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-2">
             {activeAccount?.auto_sync_enabled && (
@@ -702,38 +756,96 @@ export default function App() {
                 </button>
               </div>
             )}
-            {syncMessage && (
-              <span className="text-xs text-zinc-400">{syncMessage}</span>
-            )}
+            {syncMessage && <span className="text-xs text-zinc-400">{syncMessage}</span>}
           </div>
 
-          <div className="inline-flex items-center gap-2 bg-zinc-900 border border-zinc-800 rounded-xl p-1.5 ml-auto">
-            <select
-              value={activeAccountId}
-              onChange={(e) => setActiveAccountId(e.target.value)}
-              className="bg-zinc-950 text-sm font-medium text-zinc-100 px-3 py-1.5 rounded-lg border border-zinc-800 focus:outline-none focus:border-zinc-700"
-              disabled={accounts.length === 0 || dataLoading}
-            >
-              {accounts.length === 0 ? (
-                <option value="">{dataLoading ? 'Syncing...' : 'No Account'}</option>
-              ) : (
-                accounts.map((acc) => (
-                  <option key={acc.id} value={acc.id}>
-                    {acc.name}
-                  </option>
-                ))
-              )}
-            </select>
-            <button
-              onClick={() => {
-                setAccountError('');
-                setIsAccountModalOpen(true);
-              }}
-              className="p-1.5 bg-emerald-500 hover:bg-emerald-400 text-zinc-950 rounded-lg transition-colors"
-              title="Add New Account"
-            >
-              <Plus className="w-4 h-4 stroke-[2.5]" />
-            </button>
+          {/* Custom account switcher and add-account control */}
+          <div className="relative ml-auto" ref={accountDropdownRef}>
+            <div className="inline-flex items-center gap-1 rounded-xl border border-zinc-800 bg-zinc-900 p-1.5">
+              <button
+                type="button"
+                onClick={() => setIsAccountDropdownOpen((open) => !open)}
+                disabled={accounts.length === 0 || dataLoading}
+                aria-haspopup="listbox"
+                aria-expanded={isAccountDropdownOpen}
+                className="group inline-grid h-7 w-fit min-w-[80px] max-w-[190px] grid-cols-[12px_auto_20px] items-center gap-1 rounded-md border border-zinc-700 bg-zinc-950 px-2 text-center transition-colors hover:bg-zinc-900 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                <span className="col-start-2 block max-w-[150px] truncate whitespace-nowrap text-[11px] font-medium text-zinc-100">
+                  {selectorAccountName}
+                </span>
+                <ChevronDown
+                  className={`col-start-3 h-3.5 w-3.5 justify-self-end text-zinc-300 transition-transform ${
+                    isAccountDropdownOpen ? 'rotate-180' : ''
+                  }`}
+                />
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setIsAccountDropdownOpen(false);
+                  setAccountError('');
+                  setIsAccountModalOpen(true);
+                }}
+                className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-md bg-emerald-500 text-zinc-950 transition-colors hover:bg-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-300 focus:ring-offset-2 focus:ring-offset-zinc-950"
+                title="Add New Account"
+                aria-label="Add new account"
+              >
+                <Plus className="h-3 w-3 stroke-[2.75]" />
+              </button>
+            </div>
+
+            {isAccountDropdownOpen && accounts.length > 0 && (
+              <div className="absolute right-0 z-40 mt-1.5 w-44 max-w-[calc(100vw-2rem)] overflow-hidden rounded-xl border border-zinc-700/80 bg-zinc-950/95 p-1.5 shadow-[0_16px_40px_rgba(0,0,0,0.6)] ring-1 ring-white/5 backdrop-blur-xl">
+                <div className="flex items-center justify-between px-2 py-1.5">
+                  <p className="text-[9px] font-bold uppercase tracking-[0.16em] text-zinc-500">
+                    Accounts
+                  </p>
+                  <span className="rounded-md border border-zinc-700 bg-zinc-900 px-1.5 py-0.5 text-[9px] font-semibold tabular-nums text-zinc-400">
+                    {accounts.length}
+                  </span>
+                </div>
+
+                <div
+                  role="listbox"
+                  aria-label="Trading accounts"
+                  className="max-h-64 space-y-0.5 overflow-y-auto"
+                >
+                  {accounts.map((acc) => {
+                    const isActive = acc.id === activeAccountId;
+                    return (
+                      <button
+                        key={acc.id}
+                        type="button"
+                        role="option"
+                        aria-selected={isActive}
+                        onClick={() => {
+                          setActiveAccountId(acc.id);
+                          setIsAccountDropdownOpen(false);
+                        }}
+                        className={`flex w-full items-center gap-2 rounded-lg border px-2 py-1.5 text-left transition-all ${
+                          isActive
+                            ? 'border-emerald-400/25 bg-emerald-500/[0.09]'
+                            : 'border-transparent hover:border-zinc-700/80 hover:bg-zinc-900/90'
+                        }`}
+                      >
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate text-xs font-medium text-zinc-100">
+                            {acc.name}
+                          </span>
+                        </span>
+                        {acc.auto_sync_enabled && (
+                          <span className="shrink-0 rounded border border-emerald-500/20 bg-emerald-500/10 px-1 py-0.5 text-[8px] font-semibold text-emerald-300">
+                            MT5
+                          </span>
+                        )}
+                        {isActive && <Check className="h-3 w-3 shrink-0 text-emerald-300" />}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
           </div>
         </div>
 
@@ -844,18 +956,10 @@ export default function App() {
           </div>
         </section>
 
-        {/* TRADE LOG */}
+        {/* AUTOMATED TRADE LOG (DATE, ASSET, DIRECTION, LOTS, ENP, EXP, PNL) */}
         <section className="bg-zinc-900/80 border border-zinc-800 rounded-2xl overflow-hidden">
-          <div className="p-5 border-b border-zinc-800 flex items-center justify-between">
+          <div className="p-5 border-b border-zinc-800">
             <h2 className="text-base font-semibold text-white">Trade Log</h2>
-            <button
-              onClick={() => setIsTradeModalOpen(true)}
-              disabled={!activeAccount}
-              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 bg-emerald-500 hover:bg-emerald-400 disabled:opacity-40 text-zinc-950 text-sm font-semibold rounded-lg transition-colors"
-            >
-              <PlusCircle className="w-4 h-4" />
-              <span>Log Trade</span>
-            </button>
           </div>
 
           <div className="overflow-x-auto">
@@ -866,25 +970,29 @@ export default function App() {
                   <th className="py-3 px-4">Asset</th>
                   <th className="py-3 px-4">Direction</th>
                   <th className="py-3 px-4">Lots</th>
+                  <th className="py-3 px-4 text-right">ENP</th>
+                  <th className="py-3 px-4 text-right">EXP</th>
                   <th className="py-3 px-4 text-right">PnL</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-zinc-800/60 text-sm">
                 {accountTrades.length === 0 ? (
                   <tr>
-                    <td colSpan="5" className="py-8 text-center text-zinc-500">
+                    <td colSpan="7" className="py-8 text-center text-zinc-500">
                       {dataLoading
                         ? 'Loading synced trades...'
-                        : 'No trades logged for this account yet.'}
+                        : 'No trades synced for this account yet.'}
                     </td>
                   </tr>
                 ) : (
-                  accountTrades.map((trade) => {
+                  visibleTrades.map((trade) => {
                     const isProfit = Number(trade.pnl) >= 0;
                     return (
                       <tr key={trade.id} className="hover:bg-zinc-800/30 transition-colors">
-                        <td className="py-3 px-4 font-mono text-xs text-zinc-300">{trade.date}</td>
-                        <td className="py-3 px-4 font-semibold text-white">
+                        <td className="py-3 px-4 font-mono text-xs text-zinc-300 whitespace-nowrap">
+                          {trade.date}
+                        </td>
+                        <td className="py-3 px-4 font-semibold text-white whitespace-nowrap">
                           <div className="flex items-center gap-2">
                             <span>{trade.asset}</span>
                             {trade.mt5_deal_id && (
@@ -894,7 +1002,7 @@ export default function App() {
                             )}
                           </div>
                         </td>
-                        <td className="py-3 px-4">
+                        <td className="py-3 px-4 whitespace-nowrap">
                           <span
                             className={`px-2 py-0.5 text-xs font-bold rounded ${
                               trade.direction === 'BUY'
@@ -905,11 +1013,17 @@ export default function App() {
                             {trade.direction}
                           </span>
                         </td>
-                        <td className="py-3 px-4 font-mono text-zinc-300 tabular-nums">
+                        <td className="py-3 px-4 font-mono text-zinc-300 tabular-nums whitespace-nowrap">
                           {trade.lots}
                         </td>
+                        <td className="py-3 px-4 text-right font-mono text-zinc-300 tabular-nums whitespace-nowrap">
+                          {formatPrice(trade.enp)}
+                        </td>
+                        <td className="py-3 px-4 text-right font-mono text-zinc-300 tabular-nums whitespace-nowrap">
+                          {formatPrice(trade.exp)}
+                        </td>
                         <td
-                          className={`py-3 px-4 text-right font-mono font-semibold tabular-nums ${
+                          className={`py-3 px-4 text-right font-mono font-semibold tabular-nums whitespace-nowrap ${
                             isProfit ? 'text-emerald-400' : 'text-rose-400'
                           }`}
                         >
@@ -924,9 +1038,25 @@ export default function App() {
               </tbody>
             </table>
           </div>
+          {accountTrades.length > 5 && (
+            <div className="flex justify-center border-t border-zinc-800 px-4 py-3">
+              <button
+                type="button"
+                onClick={() => setShowAllTrades((showingAll) => !showingAll)}
+                className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold text-zinc-400 transition-colors hover:bg-zinc-800/70 hover:text-zinc-100"
+              >
+                {showAllTrades ? 'Show less' : 'Show more'}
+                <ChevronDown
+                  className={`h-3.5 w-3.5 transition-transform ${
+                    showAllTrades ? 'rotate-180' : ''
+                  }`}
+                />
+              </button>
+            </div>
+          )}
         </section>
 
-        {/* STANDARD MONTHLY CALENDAR */}
+        {/* MONTHLY CALENDAR WITH WEEKLY PNL COLUMN AFTER SATURDAY */}
         <section className="bg-zinc-900/80 border border-zinc-800 rounded-2xl p-5 space-y-4">
           <div className="flex flex-col items-center justify-center space-y-1">
             <div className="flex items-center gap-1.5 text-xs font-bold tracking-widest uppercase text-zinc-400">
@@ -952,66 +1082,134 @@ export default function App() {
             </div>
           </div>
 
-          <div className="grid grid-cols-7 gap-1.5 text-center text-xs font-semibold text-zinc-500 pt-2">
-            {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day) => (
-              <div key={day} className="py-1">
-                {day}
+          <div className="overflow-x-auto">
+            <div className="min-w-[620px] space-y-1.5">
+              {/* 8-Column Header: Sun - Sat + Weekly PnL */}
+              <div className="grid grid-cols-8 gap-1.5 text-center text-xs font-semibold text-zinc-500 pt-2">
+                {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day) => (
+                  <div key={day} className="py-1">
+                    {day}
+                  </div>
+                ))}
+                <div className="py-1 text-zinc-400">Week PnL</div>
               </div>
-            ))}
-          </div>
 
-          <div className="grid grid-cols-7 gap-1.5">
-            {calendarData.cells.map((cell) => {
-              if (cell.type === 'empty') {
+              {/* Weekly Rows */}
+              {calendarData.weeks.map((week) => {
+                const weekIsPos = week.hasTrades && week.weekTotal > 0;
+                const weekIsNeg = week.hasTrades && week.weekTotal < 0;
+
                 return (
-                  <div
-                    key={cell.key}
-                    className="h-16 md:h-20 rounded-xl bg-zinc-950/30 border border-zinc-900/50"
-                  />
-                );
-              }
+                  <div key={`week-${week.weekIndex}`} className="grid grid-cols-8 gap-1.5">
+                    {week.days.map((cell) => {
+                      if (cell.type === 'empty') {
+                        return (
+                          <div
+                            key={cell.key}
+                            className="h-16 md:h-20 rounded-xl bg-zinc-950/30 border border-zinc-900/50"
+                          />
+                        );
+                      }
 
-              const hasPnl = cell.pnl !== undefined;
-              const isPos = hasPnl && cell.pnl > 0;
-              const isNeg = hasPnl && cell.pnl < 0;
+                      const hasPnl = cell.pnl !== undefined;
+                      const isPos = hasPnl && cell.pnl > 0;
+                      const isNeg = hasPnl && cell.pnl < 0;
+                      const isToday = cell.dateStr === todayEatStr;
 
-              return (
-                <div
-                  key={cell.key}
-                  className={`h-16 md:h-20 rounded-xl border p-2 flex flex-col justify-between transition-colors ${
-                    isPos
-                      ? 'bg-emerald-500/10 border-emerald-500/30'
-                      : isNeg
-                      ? 'bg-rose-500/10 border-rose-500/30'
-                      : 'bg-zinc-950/70 border-zinc-800/80'
-                  }`}
-                >
-                  <span className="text-xs font-medium text-zinc-400">{cell.day}</span>
-                  {hasPnl && (
-                    <span
-                      className={`text-xs md:text-sm font-mono font-bold truncate tabular-nums ${
-                        isPos ? 'text-emerald-400' : isNeg ? 'text-rose-400' : 'text-zinc-300'
+                      return (
+                        <div
+                          key={cell.key}
+                          className={`h-16 md:h-20 rounded-xl border p-2 flex flex-col justify-between transition-all ${
+                            isPos
+                              ? 'bg-emerald-500/10 border-emerald-500/30'
+                              : isNeg
+                              ? 'bg-rose-500/10 border-rose-500/30'
+                              : 'bg-zinc-950/70 border-zinc-800/80'
+                          } ${
+                            isToday
+                              ? '!border-emerald-500/35 shadow-[0_0_8px_rgba(52,211,153,0.12)] ring-1 ring-emerald-500/15'
+                              : ''
+                          }`}
+                        >
+                          <div className="flex items-center justify-between">
+                            <span
+                              className={`text-xs font-medium ${
+                                isToday ? 'text-emerald-400/80 font-semibold' : 'text-zinc-400'
+                              }`}
+                            >
+                              {cell.day}
+                            </span>
+                            {cell.tradeCount > 0 && (
+                              <span className="inline-flex min-w-4 h-4 items-center justify-center rounded-full bg-emerald-500/15 px-1 text-[9px] font-semibold tabular-nums text-emerald-300">
+                                {cell.tradeCount}
+                              </span>
+                            )}
+                          </div>
+                          {hasPnl && (
+                            <span
+                              className={`text-xs md:text-sm font-mono font-bold truncate tabular-nums ${
+                                isPos
+                                  ? 'text-emerald-400'
+                                  : isNeg
+                                  ? 'text-rose-400'
+                                  : 'text-zinc-300'
+                              }`}
+                            >
+                              {formatCompactPnl(cell.pnl)}
+                            </span>
+                          )}
+                        </div>
+                      );
+                    })}
+
+                    {/* Weekly PnL Summary Cell (After Saturday) */}
+                    <div
+                      className={`h-16 md:h-20 rounded-xl border p-2 flex flex-col justify-between transition-colors ${
+                        weekIsPos
+                          ? 'bg-emerald-500/15 border-emerald-500/40'
+                          : weekIsNeg
+                          ? 'bg-rose-500/15 border-rose-500/40'
+                          : 'bg-zinc-950/90 border-zinc-800/90'
                       }`}
                     >
-                      {formatCompactPnl(cell.pnl)}
-                    </span>
-                  )}
-                </div>
-              );
-            })}
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-500">
+                        W{week.weekIndex}
+                      </span>
+                      <span
+                        className={`text-xs md:text-sm font-mono font-bold truncate tabular-nums ${
+                          weekIsPos
+                            ? 'text-emerald-400'
+                            : weekIsNeg
+                            ? 'text-rose-400'
+                            : 'text-zinc-500'
+                        }`}
+                      >
+                        {week.hasTrades ? formatCompactPnl(week.weekTotal) : '$0'}
+                      </span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           </div>
         </section>
       </div>
 
-      {/* ADD ACCOUNT MODAL (WITH MT5 AUTO-SYNC CREDENTIALS) */}
+      {/* ADD ACCOUNT MODAL (CLICK OUTSIDE TO DISMISS) */}
       {isAccountModalOpen && (
-        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-zinc-900 border border-zinc-800 rounded-2xl w-full max-w-md p-6 space-y-5 max-h-[90vh] overflow-y-auto">
+        <div
+          onClick={handleCloseAccountModal}
+          className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="bg-zinc-900 border border-zinc-800 rounded-2xl w-full max-w-md p-6 space-y-5 max-h-[90vh] overflow-y-auto shadow-2xl"
+          >
             <div className="flex items-center justify-between">
               <h3 className="text-lg font-bold text-white">Add Trading Account</h3>
               {accounts.length > 0 && (
                 <button
-                  onClick={() => setIsAccountModalOpen(false)}
+                  onClick={handleCloseAccountModal}
                   className="text-zinc-400 hover:text-white"
                 >
                   <X className="w-5 h-5" />
@@ -1143,99 +1341,6 @@ export default function App() {
                   : enableMt5Sync
                   ? 'Connect & Save Account'
                   : 'Create Account'}
-              </button>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* MANUAL LOG TRADE MODAL */}
-      {isTradeModalOpen && (
-        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-zinc-900 border border-zinc-800 rounded-2xl w-full max-w-md p-6 space-y-5">
-            <div className="flex items-center justify-between">
-              <h3 className="text-lg font-bold text-white">Log Manual Trade</h3>
-              <button
-                onClick={() => setIsTradeModalOpen(false)}
-                className="text-zinc-400 hover:text-white"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <form onSubmit={handleLogTrade} className="space-y-4">
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-medium text-zinc-400 mb-1.5">Date</label>
-                  <input
-                    type="date"
-                    required
-                    value={tradeDate}
-                    onChange={(e) => setTradeDate(e.target.value)}
-                    className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-emerald-500"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-zinc-400 mb-1.5">Asset</label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="XAUUSD"
-                    value={tradeAsset}
-                    onChange={(e) => setTradeAsset(e.target.value)}
-                    className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-sm text-white uppercase focus:outline-none focus:border-emerald-500"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-medium text-zinc-400 mb-1.5">
-                    Direction
-                  </label>
-                  <select
-                    value={tradeDirection}
-                    onChange={(e) => setTradeDirection(e.target.value)}
-                    className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-emerald-500"
-                  >
-                    <option value="BUY">BUY</option>
-                    <option value="SELL">SELL</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-zinc-400 mb-1.5">Lots</label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    min="0.01"
-                    required
-                    value={tradeLots}
-                    onChange={(e) => setTradeLots(e.target.value)}
-                    className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-emerald-500"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-xs font-medium text-zinc-400 mb-1.5">
-                  Net PnL ($)
-                </label>
-                <input
-                  type="number"
-                  step="any"
-                  required
-                  placeholder="e.g. 240.50 or -115.00"
-                  value={tradePnl}
-                  onChange={(e) => setTradePnl(e.target.value)}
-                  className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3.5 py-2.5 text-sm text-white focus:outline-none focus:border-emerald-500"
-                />
-              </div>
-
-              <button
-                type="submit"
-                className="w-full py-2.5 bg-emerald-500 hover:bg-emerald-400 text-zinc-950 font-bold text-sm rounded-xl transition-colors"
-              >
-                Save Trade
               </button>
             </form>
           </div>
