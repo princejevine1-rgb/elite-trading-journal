@@ -20,6 +20,22 @@ import {
   Mail
 } from 'lucide-react';
 
+const getTradingDayInfo = (date) => {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'Africa/Nairobi',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    weekday: 'short'
+  }).formatToParts(date);
+  const getPart = (type) => parts.find((part) => part.type === type)?.value || '';
+
+  return {
+    date: `${getPart('year')}-${getPart('month')}-${getPart('day')}`,
+    isWeekend: ['Sat', 'Sun'].includes(getPart('weekday'))
+  };
+};
+
 export default function App() {
   // --- Auth & User Profile State ---
   const [session, setSession] = useState(null);
@@ -41,13 +57,14 @@ export default function App() {
   const [tempName, setTempName] = useState('');
   const [isAccountModalOpen, setIsAccountModalOpen] = useState(false);
   const [isTradeModalOpen, setIsTradeModalOpen] = useState(false);
+  const [isWeekendNoticeOpen, setIsWeekendNoticeOpen] = useState(false);
   const [isAccountDropdownOpen, setIsAccountDropdownOpen] = useState(false);
 
   // --- Form States ---
   const [newAccName, setNewAccName] = useState('');
   const [newAccBalance, setNewAccBalance] = useState('');
 
-  const [tradeDate, setTradeDate] = useState(() => new Date().toISOString().split('T')[0]);
+  const [tradeDate, setTradeDate] = useState(() => getTradingDayInfo(new Date()).date);
   const [tradeAsset, setTradeAsset] = useState('XAUUSD');
   const [tradeDirection, setTradeDirection] = useState('BUY');
   const [tradeLots, setTradeLots] = useState('');
@@ -58,6 +75,7 @@ export default function App() {
   // --- Clock & Calendar ---
   const [now, setNow] = useState(new Date());
   const [currentDate, setCurrentDate] = useState(() => new Date());
+  const tradingDayInfo = getTradingDayInfo(now);
 
   // 1. Check & Listen for Auth Session across devices
   useEffect(() => {
@@ -273,20 +291,29 @@ export default function App() {
     e.preventDefault();
     setTradeError('');
     if (tradeSubmitting) return;
+    const currentTradingDay = getTradingDayInfo(new Date());
+    if (currentTradingDay.isWeekend) {
+      setIsTradeModalOpen(false);
+      setIsWeekendNoticeOpen(true);
+      return;
+    }
     if (!activeAccount || !session?.user) {
       setTradeError('You need an active account and signed-in session to save a trade.');
       return;
     }
     const lotsVal = parseFloat(tradeLots);
     const pnlVal = parseFloat(tradePnl);
+    if (!tradeDate || tradeDate !== currentTradingDay.date) {
+      setTradeError('Trades can only be logged for today.');
+      return;
+    }
     if (
-      !tradeDate ||
       !tradeAsset.trim() ||
       !Number.isFinite(lotsVal) ||
       lotsVal <= 0 ||
       !Number.isFinite(pnlVal)
     ) {
-      setTradeError('Enter a date, asset, positive lot size, and valid PnL amount.');
+      setTradeError('Enter an asset, positive lot size, and valid PnL amount.');
       return;
     }
 
@@ -330,6 +357,18 @@ export default function App() {
     } finally {
       setTradeSubmitting(false);
     }
+  };
+
+  const handleOpenTradeModal = () => {
+    const currentTradingDay = getTradingDayInfo(new Date());
+    if (currentTradingDay.isWeekend) {
+      setIsWeekendNoticeOpen(true);
+      return;
+    }
+
+    setTradeDate(currentTradingDay.date);
+    setTradeError('');
+    setIsTradeModalOpen(true);
   };
 
   // --- Active Account & Metrics Calculations ---
@@ -797,8 +836,8 @@ export default function App() {
           <div className="p-5 border-b border-zinc-800 flex items-center justify-between">
             <h2 className="text-base font-semibold text-white">Trade Log</h2>
             <button
-              onClick={() => setIsTradeModalOpen(true)}
-              disabled={!activeAccount}
+              onClick={handleOpenTradeModal}
+              disabled={!activeAccount && !tradingDayInfo.isWeekend}
               className="inline-flex items-center gap-1.5 px-3.5 py-1.5 bg-emerald-500 hover:bg-emerald-400 disabled:opacity-40 text-zinc-950 text-sm font-semibold rounded-lg transition-colors"
             >
               <PlusCircle className="w-4 h-4" />
@@ -1060,6 +1099,8 @@ export default function App() {
                 <input
                   type="date"
                   required
+                  min={tradingDayInfo.date}
+                  max={tradingDayInfo.date}
                   value={tradeDate}
                   onChange={(e) => setTradeDate(e.target.value)}
                   className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3.5 py-2.5 text-sm text-white focus:outline-none focus:border-emerald-500"
@@ -1149,6 +1190,31 @@ export default function App() {
                 {tradeSubmitting ? 'Saving...' : 'Save Trade'}
               </button>
             </form>
+          </div>
+        </div>
+      )}
+
+      {isWeekendNoticeOpen && (
+        <div
+          className="fixed inset-0 z-[60] bg-black/75 backdrop-blur-sm flex items-center justify-center p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="weekend-notice-title"
+        >
+          <div className="bg-zinc-900 border border-zinc-800 rounded-2xl w-full max-w-sm p-6 text-center space-y-4">
+            <h3 id="weekend-notice-title" className="text-lg font-bold text-white">
+              Enjoy Your Weekend
+            </h3>
+            <p className="text-sm text-zinc-400">
+              Trades can only be logged Monday through Friday.
+            </p>
+            <button
+              type="button"
+              onClick={() => setIsWeekendNoticeOpen(false)}
+              className="w-full py-2.5 bg-emerald-500 hover:bg-emerald-400 text-zinc-950 font-bold text-sm rounded-xl transition-colors"
+            >
+              Close
+            </button>
           </div>
         </div>
       )}
