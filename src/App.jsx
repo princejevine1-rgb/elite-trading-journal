@@ -709,7 +709,11 @@ export default function App() {
                 type="button"
                 onClick={() => setIsAccountDropdownOpen((open) => !open)}
                 disabled={accounts.length === 0 || dataLoading}
-                className="bg-zinc-950 text-sm font-medium text-zinc-100 px-3 py-1.5 rounded-lg border border-zinc-800 focus:outline-none focus:border-zinc-700 min-w-[140px] text-left"
+                className={`bg-zinc-950 text-sm font-medium text-zinc-100 px-3 py-1.5 rounded-lg border focus:outline-none min-w-[140px] text-left ${
+                  activeAccount
+                    ? 'border-emerald-500/40 ring-1 ring-emerald-500/20 shadow-[0_0_10px_rgba(16,185,129,0.12)]'
+                    : 'border-zinc-800 focus:border-zinc-700'
+                }`}
               >
                 {activeAccount?.name || (dataLoading ? 'Syncing...' : 'No Account')}
               </button>
@@ -719,9 +723,7 @@ export default function App() {
                     <div
                       key={acc.id}
                       className={`flex items-center justify-between rounded-lg px-2 py-1.5 ${
-                        acc.id === activeAccountId
-                          ? 'bg-emerald-500/10 ring-1 ring-emerald-500/30 shadow-[0_0_10px_rgba(16,185,129,0.14)]'
-                          : 'hover:bg-zinc-900'
+                        acc.id === activeAccountId ? 'bg-zinc-800' : 'hover:bg-zinc-900'
                       }`}
                     >
                       <button
