@@ -1,8 +1,9 @@
-const CACHE_NAME = 'elite-trading-journal-v1';
+const CACHE_NAME = 'elite-trading-journal-v2';
 const PRECACHE_URLS = [
   '/',
   '/index.html',
   '/manifest.webmanifest',
+  '/favicon.png',
   '/icon-192.png',
   '/icon-512.png'
 ];
