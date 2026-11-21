@@ -50,6 +50,7 @@ export default function App() {
   const [tradeDate, setTradeDate] = useState(() => new Date().toISOString().split('T')[0]);
   const [tradeAsset, setTradeAsset] = useState('XAUUSD');
   const [tradeDirection, setTradeDirection] = useState('BUY');
+  const [tradeLots, setTradeLots] = useState('');
   const [tradePnl, setTradePnl] = useState('');
   const [tradeError, setTradeError] = useState('');
   const [tradeSubmitting, setTradeSubmitting] = useState(false);
@@ -276,9 +277,16 @@ export default function App() {
       setTradeError('You need an active account and signed-in session to save a trade.');
       return;
     }
+    const lotsVal = parseFloat(tradeLots);
     const pnlVal = parseFloat(tradePnl);
-    if (!tradeDate || !tradeAsset.trim() || !Number.isFinite(pnlVal)) {
-      setTradeError('Enter a date, asset, and valid PnL amount.');
+    if (
+      !tradeDate ||
+      !tradeAsset.trim() ||
+      !Number.isFinite(lotsVal) ||
+      lotsVal <= 0 ||
+      !Number.isFinite(pnlVal)
+    ) {
+      setTradeError('Enter a date, asset, positive lot size, and valid PnL amount.');
       return;
     }
 
@@ -293,6 +301,7 @@ export default function App() {
             date: tradeDate,
             asset: tradeAsset.trim().toUpperCase(),
             direction: tradeDirection,
+            lots: lotsVal,
             pnl: pnlVal
           }
         ])
@@ -309,6 +318,7 @@ export default function App() {
       }
 
       setTrades((prev) => [data, ...prev]);
+      setTradeLots('');
       setTradePnl('');
       setIsTradeModalOpen(false);
     } catch (error) {
@@ -1096,6 +1106,20 @@ export default function App() {
                     SELL
                   </button>
                 </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-zinc-400 mb-1.5">Lots</label>
+                <input
+                  type="number"
+                  min="0"
+                  step="any"
+                  required
+                  placeholder="e.g. 0.10"
+                  value={tradeLots}
+                  onChange={(e) => setTradeLots(e.target.value)}
+                  className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3.5 py-2.5 text-sm text-white focus:outline-none focus:border-emerald-500"
+                />
               </div>
 
               <div>
