@@ -1010,6 +1010,7 @@ export default function App() {
                     const hasPnl = cell.pnl !== undefined;
                     const isPos = hasPnl && cell.pnl > 0;
                     const isNeg = hasPnl && cell.pnl < 0;
+                    const isToday = cell.dateStr === tradingDayInfo.date;
 
                     return (
                       <div
@@ -1020,6 +1021,10 @@ export default function App() {
                             : isNeg
                             ? 'bg-rose-500/10 border-rose-500/30'
                             : 'bg-zinc-950/70 border-zinc-800/80'
+                        } ${
+                          isToday
+                            ? 'ring-1 ring-emerald-500/35 shadow-[0_0_10px_rgba(16,185,129,0.12)]'
+                            : ''
                         }`}
                       >
                         <span className="text-xs font-medium text-zinc-400">{cell.day}</span>
