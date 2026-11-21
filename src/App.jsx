@@ -1206,7 +1206,7 @@ export default function App() {
               Enjoy Your Weekend
             </h3>
             <p className="text-sm text-zinc-400">
-              Trades can only be logged Monday through Friday.
+              Weekends Are For Relaxing Boss. Have Fun
             </p>
             <button
               type="button"
