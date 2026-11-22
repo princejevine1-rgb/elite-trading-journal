@@ -432,8 +432,17 @@ export default function App() {
       );
 
       if (connectErr || connectData?.error) {
+        let detailedError = connectData?.error;
+        if (!detailedError && connectErr?.context) {
+          try {
+            const errBody = await connectErr.context.json();
+            detailedError = errBody?.error || errBody?.message;
+          } catch {
+            // fallback to default message
+          }
+        }
         setAccountError(
-          connectData?.error ||
+          detailedError ||
             connectErr?.message ||
             'Account saved, but MT5 connection failed.'
         );
@@ -442,7 +451,6 @@ export default function App() {
         setAccountCreating(false);
         return;
       }
-
       finalAccount = {
         ...createdAcc,
         mt5_login: mt5Login.trim(),

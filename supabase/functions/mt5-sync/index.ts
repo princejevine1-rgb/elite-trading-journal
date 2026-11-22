@@ -3,10 +3,28 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
 };
 
 const PROVISIONING_BASE = 'https://mt-provisioning-api-v1.agiliumtrade.agiliumtrade.ai';
-const CLIENT_BASE = 'https://mt-client-api-v1.new-york.agiliumtrade.ai';
+
+function jsonResponse(body: unknown, status = 200) {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+  });
+}
+
+async function fetchAccountMeta(token: string, metaapiAccountId: string) {
+  const res = await fetch(`${PROVISIONING_BASE}/users/current/accounts/${metaapiAccountId}`, {
+    headers: { 'auth-token': token },
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(data?.message || data?.error || `MetaApi account lookup failed (${res.status})`);
+  }
+  return data;
+}
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -14,210 +32,251 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const authHeader = req.headers.get('Authorization');
-    if (!authHeader) {
-      return new Response(JSON.stringify({ error: 'Missing Authorization header' }), {
-        status: 401,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
+    const metaapiToken = Deno.env.get('METAAPI_TOKEN');
+    if (!metaapiToken) {
+      return jsonResponse({ error: 'METAAPI_TOKEN secret is not configured in Supabase.' }, 400);
     }
 
-    const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
-    const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY')!;
-    const metaApiToken = Deno.env.get('METAAPI_TOKEN');
-
-    if (!metaApiToken) {
-      throw new Error('METAAPI_TOKEN secret is not configured in Supabase.');
+    const supabaseUrl = Deno.env.get('SUPABASE_URL');
+    const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+    if (!supabaseUrl || !supabaseServiceKey) {
+      return jsonResponse({ error: 'Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY.' }, 500);
     }
 
-    const supabase = createClient(supabaseUrl, supabaseAnonKey, {
-      global: { headers: { Authorization: authHeader } },
-    });
-
-    const {
-      data: { user },
-      error: userError,
-    } = await supabase.auth.getUser();
-    if (userError || !user) {
-      return new Response(JSON.stringify({ error: 'Unauthorized' }), {
-        status: 401,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
+    const authHeader = req.headers.get('Authorization') || '';
+    const jwt = authHeader.match(/^Bearer\s+(.+)$/i)?.[1]?.trim();
+    if (!jwt) {
+      return jsonResponse({ error: 'Unauthorized' }, 401);
     }
 
-    const body = await req.json();
-    const { action } = body;
+    const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey);
+    const { data: userData, error: userError } = await supabaseAdmin.auth.getUser(jwt);
+    const userId = userData?.user?.id;
+    if (userError || !userId) {
+      return jsonResponse({ error: 'Unauthorized' }, 401);
+    }
 
-    // --- ACTION 1: CONNECT MT5 ACCOUNT ---
+    const payload = await req.json().catch(() => ({}));
+    const action = payload.action || (payload.accountId ? 'sync' : 'connect');
+
+    // 1. CONNECT: Create account on MetaApi, deploy it, and save to trading_accounts
     if (action === 'connect') {
-      const { accountId, accountName, login, investorPassword, server } = body;
+      const {
+        accountId,
+        accountName,
+        login,
+        mt5_login,
+        password,
+        investorPassword,
+        server,
+        mt5_server,
+        region,
+      } = payload;
 
-      if (!accountId || !login || !investorPassword || !server) {
-        throw new Error('Account ID, MT5 Login, Investor Password, and Server are required.');
-      }
+      const tradingAccountId = String(accountId || '').trim();
+      const mt5Login = String(login ?? mt5_login ?? '').trim();
+      const mt5Server = String(server ?? mt5_server ?? '').trim();
+      const mt5Password = String(password ?? investorPassword ?? '').trim();
 
-      const provisionRes = await fetch(`${PROVISIONING_BASE}/users/current/accounts`, {
-        method: 'POST',
-        headers: {
-          'auth-token': metaApiToken,
-          'Content-Type': 'application/json',
-          'transaction-id': crypto.randomUUID().replace(/-/g, ''),
-        },
-        body: JSON.stringify({
-          name: accountName || `MT5-${login}`,
-          type: 'cloud-g2',
-          login: String(login).trim(),
-          password: investorPassword,
-          server: server.trim(),
-          platform: 'mt5',
-          magic: 0,
-        }),
-      });
-
-      const provisionData = await provisionRes.json();
-      if (!provisionRes.ok) {
-        throw new Error(provisionData.message || 'MetaApi failed to register MT5 credentials.');
-      }
-
-      const metaapiAccountId = provisionData.id;
-
-      await fetch(`${PROVISIONING_BASE}/users/current/accounts/${metaapiAccountId}/deploy`, {
-        method: 'POST',
-        headers: { 'auth-token': metaApiToken },
-      });
-
-      const { error: updateErr } = await supabase
-        .from('trading_accounts')
-        .update({
-          mt5_login: String(login).trim(),
-          mt5_server: server.trim(),
-          metaapi_account_id: metaapiAccountId,
-          auto_sync_enabled: true,
-        })
-        .eq('id', accountId)
-        .eq('user_id', user.id);
-
-      if (updateErr) throw updateErr;
-
-      return new Response(
-        JSON.stringify({ success: true, metaapiAccountId }),
-        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
-
-    // --- ACTION 2: SYNC CLOSED DEALS WITH ENP & EXP ---
-    if (action === 'sync') {
-      const { accountId } = body;
-
-      const { data: account, error: accErr } = await supabase
-        .from('trading_accounts')
-        .select('*')
-        .eq('id', accountId)
-        .eq('user_id', user.id)
-        .single();
-
-      if (accErr || !account) throw new Error('Trading account not found.');
-      if (!account.metaapi_account_id) {
-        throw new Error('This account is not linked to MT5.');
-      }
-
-      // Fetch last 90 days of deal history from MetaApi
-      const endTime = new Date().toISOString();
-      const startTime = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString();
-
-      const dealsUrl = `${CLIENT_BASE}/users/current/accounts/${account.metaapi_account_id}/history-deals/time/${encodeURIComponent(startTime)}/${encodeURIComponent(endTime)}`;
-
-      const dealsRes = await fetch(dealsUrl, {
-        headers: { 'auth-token': metaApiToken },
-      });
-
-      const deals = await dealsRes.json();
-      if (!dealsRes.ok) {
-        throw new Error(
-          deals.message || 'MT5 terminal is still connecting to broker. Try again in 30 seconds.'
+      if (!tradingAccountId || !mt5Login || !mt5Server || !mt5Password) {
+        return jsonResponse(
+          { error: 'Account ID, MT5 login, investor password, and broker server are required.' },
+          400
         );
       }
 
-      const allDeals = Array.isArray(deals) ? deals : [];
-
-      // 1. Map opening deals by positionId so we can look up each trade's Entry Price (ENP)
-      const entryPriceByPosition = new Map<string, number>();
-      for (const d of allDeals) {
-        if (
-          (d.entryType === 'DEAL_ENTRY_IN' || d.entryType === 'DEAL_ENTRY_INOUT') &&
-          d.positionId &&
-          typeof d.price === 'number'
-        ) {
-          // Keep the first entry deal price for that position
-          if (!entryPriceByPosition.has(String(d.positionId))) {
-            entryPriceByPosition.set(String(d.positionId), d.price);
-          }
-        }
+      const { data: tradingAccount, error: accountError } = await supabaseAdmin
+        .from('trading_accounts')
+        .select('id, name')
+        .eq('id', tradingAccountId)
+        .eq('user_id', userId)
+        .single();
+      if (accountError || !tradingAccount) {
+        return jsonResponse({ error: 'Trading account not found in database.' }, 404);
       }
 
-      // 2. Filter closed exit deals and attach ENP + EXP
-      const closedDeals = allDeals.filter(
-        (d) =>
-          (d.entryType === 'DEAL_ENTRY_OUT' ||
-            d.entryType === 'DEAL_ENTRY_INOUT' ||
-            d.entryType === 'DEAL_ENTRY_OUT_BY') &&
-          (d.type === 'DEAL_TYPE_BUY' || d.type === 'DEAL_TYPE_SELL')
+      const mt5AccountName = String(accountName || tradingAccount.name || `MT5 ${mt5Login}`).trim();
+      const createBody: Record<string, unknown> = {
+        name: mt5AccountName,
+        type: 'cloud',
+        login: mt5Login,
+        password: mt5Password,
+        server: mt5Server,
+        platform: 'mt5',
+        magic: 0,
+      };
+      if (region) createBody.region = region;
+
+      const createRes = await fetch(`${PROVISIONING_BASE}/users/current/accounts`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'auth-token': metaapiToken,
+        },
+        body: JSON.stringify(createBody),
+      });
+      const created = await createRes.json().catch(() => ({}));
+      if (!createRes.ok || !created?.id) {
+        return jsonResponse(
+          { error: created?.message || created?.error || `Failed to create MetaApi account (${createRes.status})` },
+          400
+        );
+      }
+
+      const metaapiAccountId = String(created.id);
+
+      // Trigger deployment so MetaApi starts the cloud terminal
+      await fetch(`${PROVISIONING_BASE}/users/current/accounts/${metaapiAccountId}/deploy`, {
+        method: 'POST',
+        headers: { 'auth-token': metaapiToken },
+      }).catch(() => null);
+
+      const { error: dbError } = await supabaseAdmin
+        .from('trading_accounts')
+        .update({
+          mt5_login: mt5Login,
+          mt5_server: mt5Server,
+          metaapi_account_id: metaapiAccountId,
+          auto_sync_enabled: true,
+        })
+        .eq('id', tradingAccountId)
+        .eq('user_id', userId);
+
+      if (dbError) {
+        return jsonResponse({ error: dbError.message }, 400);
+      }
+
+      return jsonResponse({
+        ok: true,
+        metaapiAccountId,
+        note: 'Account created and deploying on MetaApi. Wait ~30-60s before first trade sync.',
+      });
+    }
+
+    // 2. SYNC: Fetch account region/state and pull closed deals from MetaApi Client API
+    const accountId = payload.accountId || payload.account_id;
+    if (!accountId) {
+      return jsonResponse({ error: 'accountId is required for sync.' }, 400);
+    }
+
+    const query = supabaseAdmin
+      .from('trading_accounts')
+      .select('*')
+      .eq('id', accountId)
+      .eq('user_id', userId);
+    const { data: dbAccount, error: fetchErr } = await query.single();
+
+    if (fetchErr || !dbAccount) {
+      return jsonResponse({ error: 'Trading account not found in database.' }, 404);
+    }
+
+    const metaapiAccountId = dbAccount.metaapi_account_id;
+    if (!metaapiAccountId) {
+      return jsonResponse(
+        { error: 'No metaapi_account_id linked to this trading account. Reconnect it first.' },
+        400
       );
+    }
 
-      const rowsToUpsert = closedDeals.map((d) => {
-        const originalDirection = d.type === 'DEAL_TYPE_SELL' ? 'BUY' : 'SELL';
+    const accMeta = await fetchAccountMeta(metaapiToken, metaapiAccountId);
+    if (accMeta.state !== 'DEPLOYED') {
+      await fetch(`${PROVISIONING_BASE}/users/current/accounts/${metaapiAccountId}/deploy`, {
+        method: 'POST',
+        headers: { 'auth-token': metaapiToken },
+      }).catch(() => null);
+
+      return jsonResponse(
+        {
+          error: `Account state is "${accMeta.state}". Deployment has been triggered—wait 30-60 seconds and try Sync Now again.`,
+        },
+        409
+      );
+    }
+
+    const accRegion = accMeta.region || 'new-york';
+    const clientBase = `https://mt-client-api-v1.${accRegion}.agiliumtrade.ai`;
+
+    // Fetch recent history deals (adjust startTime as needed)
+    const startTime = encodeURIComponent(new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString());
+    const endTime = encodeURIComponent(new Date().toISOString());
+    const dealsUrl = `${clientBase}/users/current/accounts/${metaapiAccountId}/history-deals/time/${startTime}/${endTime}`;
+
+    const dealsRes = await fetch(dealsUrl, {
+      headers: { 'auth-token': metaapiToken },
+    });
+    const dealsData = await dealsRes.json().catch(() => []);
+    if (!dealsRes.ok) {
+      return jsonResponse(
+        { error: dealsData?.message || dealsData?.error || `Failed to fetch deals (${dealsRes.status})` },
+        400
+      );
+    }
+
+    const dealsArray = Array.isArray(dealsData) ? dealsData : [];
+    const entryPriceByPosition = new Map<string, number>();
+    for (const deal of dealsArray) {
+      if (
+        (deal.entryType === 'DEAL_ENTRY_IN' || deal.entryType === 'DEAL_ENTRY_INOUT') &&
+        deal.positionId &&
+        typeof deal.price === 'number' &&
+        !entryPriceByPosition.has(String(deal.positionId))
+      ) {
+        entryPriceByPosition.set(String(deal.positionId), deal.price);
+      }
+    }
+
+    const mappedTrades = dealsArray
+      .filter(
+        (deal) =>
+          deal &&
+          (deal.entryType === 'DEAL_ENTRY_OUT' ||
+            deal.entryType === 'DEAL_ENTRY_INOUT' ||
+            deal.entryType === 'DEAL_ENTRY_OUT_BY') &&
+          (deal.type === 'DEAL_TYPE_BUY' || deal.type === 'DEAL_TYPE_SELL')
+      )
+      .map((deal) => {
+        const closeDate = (deal.time || new Date().toISOString()).split('T')[0];
+        const direction = deal.type === 'DEAL_TYPE_SELL' ? 'BUY' : 'SELL';
         const netPnl =
-          Number(d.profit || 0) + Number(d.swap || 0) + Number(d.commission || 0);
-        const closeDate = (d.time || new Date().toISOString()).split('T')[0];
-
-        const enp =
-          d.positionId && entryPriceByPosition.has(String(d.positionId))
-            ? entryPriceByPosition.get(String(d.positionId))!
-            : null;
-        const exp = typeof d.price === 'number' ? d.price : null;
+          Number(deal.profit || 0) + Number(deal.swap || 0) + Number(deal.commission || 0);
+        const entryPrice = deal.positionId
+          ? entryPriceByPosition.get(String(deal.positionId))
+          : undefined;
 
         return {
-          user_id: user.id,
-          account_id: account.id,
-          mt5_deal_id: String(d.id),
+          user_id: dbAccount.user_id,
+          account_id: dbAccount.id,
+          mt5_deal_id: String(deal.id),
           date: closeDate,
-          asset: String(d.symbol || 'UNKNOWN').toUpperCase(),
-          direction: originalDirection,
-          lots: Number(d.volume || 0).toFixed(2),
-          enp,
-          exp,
+          asset: String(deal.symbol || 'UNKNOWN').toUpperCase(),
+          direction,
+          lots: Number(deal.volume || 0).toFixed(2),
+          enp: entryPrice ?? null,
+          exp: typeof deal.price === 'number' ? deal.price : null,
           pnl: Number(netPnl.toFixed(2)),
         };
       });
 
-      if (rowsToUpsert.length > 0) {
-        // Upsert updates existing rows so previously synced trades backfill ENP & EXP
-        const { error: upsertErr } = await supabase
-          .from('trades')
-          .upsert(rowsToUpsert, {
-            onConflict: 'account_id,mt5_deal_id',
-            ignoreDuplicates: false,
-          });
-
-        if (upsertErr) throw upsertErr;
+    if (mappedTrades.length > 0) {
+      const { error: upsertErr } = await supabaseAdmin
+        .from('trades')
+        .upsert(mappedTrades, { onConflict: 'account_id,mt5_deal_id' });
+      if (upsertErr) {
+        return jsonResponse({ error: upsertErr.message }, 400);
       }
-
-      await supabase
-        .from('trading_accounts')
-        .update({ last_synced_at: new Date().toISOString() })
-        .eq('id', account.id);
-
-      return new Response(
-        JSON.stringify({ success: true, syncedCount: rowsToUpsert.length }),
-        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
     }
 
-    throw new Error('Invalid action.');
-  } catch (err) {
-    return new Response(JSON.stringify({ error: err.message }), {
-      status: 400,
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    await supabaseAdmin
+      .from('trading_accounts')
+      .update({ last_synced_at: new Date().toISOString() })
+      .eq('id', dbAccount.id);
+
+    return jsonResponse({
+      ok: true,
+      region: accRegion,
+      syncedCount: mappedTrades.length,
     });
+  } catch (err) {
+    return jsonResponse({ error: err instanceof Error ? err.message : String(err) }, 500);
   }
 });
