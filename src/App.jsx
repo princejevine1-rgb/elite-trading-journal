@@ -132,9 +132,525 @@ const TRADING_VOTD_BANK = [
     paraphrase: 'Whoever walks with integrity walks securely, while crooked paths get exposed.',
     tradingApplication: 'Follow your trading plan on every single trade—no exceptions for boredom or FOMO.',
   },
+  {
+    reference: 'Proverbs 24:3–4',
+    theme: 'Structure & Insight',
+    paraphrase: 'A house is built by wisdom and established by understanding, and its rooms fill with quality.',
+    tradingApplication: 'Build your edge on repeatable data and clear rules rather than random chart patterns.',
+  },
+  {
+    reference: 'Proverbs 11:14',
+    theme: 'Sound Counsel & Review',
+    paraphrase: 'Without guidance a plan can falter, while careful review and counsel bring safety.',
+    tradingApplication: 'Review your weekly trade log objectively to spot recurring mistakes early.',
+  },
+  {
+    reference: 'Proverbs 19:2',
+    theme: 'Deliberate Speed',
+    paraphrase: 'Acting without knowledge is not good, and moving too fast makes a person miss the mark.',
+    tradingApplication: 'Pause and check higher-timeframe context before pulling the trigger.',
+  },
+  {
+    reference: 'Proverbs 4:25–26',
+    theme: 'Clear Eyes & Level Path',
+    paraphrase: 'Look straight ahead with fixed focus and make a level path for your steps.',
+    tradingApplication: 'Ignore social media hype and focus strictly on your own price action and risk.',
+  },
+  {
+    reference: 'Proverbs 16:9',
+    theme: 'Adaptability',
+    paraphrase: 'A person maps out their route, yet daily conditions direct where each step lands.',
+    tradingApplication: 'Have a pre-market bias, but adapt immediately if market structure shifts.',
+  },
+  {
+    reference: 'Proverbs 28:20',
+    theme: 'Steady Growth Over Haste',
+    paraphrase: 'A faithful, steady worker abounds in blessing, while one eager to get rich fast invites trouble.',
+    tradingApplication: 'Treat trading as a long-term skill compounder, not an overnight lottery.',
+  },
+  {
+    reference: 'Ecclesiastes 5:12',
+    theme: 'Peace of Mind',
+    paraphrase: 'Moderate, well-managed effort lets you rest peacefully, while excess worry robs your peace.',
+    tradingApplication: 'Keep risk small enough that open positions never disrupt your sleep or focus.',
+  },
+  {
+    reference: 'Proverbs 17:27',
+    theme: 'Restraint & Calm',
+    paraphrase: 'Whoever restrains their words has knowledge, and one who stays cool has understanding.',
+    tradingApplication: 'Avoid revenge trading right after a stopped-out position—take a breather.',
+  },
+  {
+    reference: 'Proverbs 29:11',
+    theme: 'Temper Control',
+    paraphrase: 'Letting every frustration spill out all at once is reckless; holding back brings calm.',
+    tradingApplication: 'Step away from the terminal whenever frustration or anger rises.',
+  },
+  {
+    reference: 'Matthew 7:24–25',
+    theme: 'Strong Foundation',
+    paraphrase: 'Building on solid rock withstands storms and floods, while weak foundations collapse.',
+    tradingApplication: 'Rely on strict risk management and backtested rules to survive volatile weeks.',
+  },
+  {
+    reference: 'Proverbs 3:21',
+    theme: 'Sound Judgment',
+    paraphrase: 'Hold onto sound judgment and discernment, and never let them slip out of sight.',
+    tradingApplication: 'Pass on low-probability A-minus setups so your capital stays ready for A-plus ones.',
+  },
+  {
+    reference: 'Proverbs 15:22',
+    theme: 'Thorough Preparation',
+    paraphrase: 'Plans fail for lack of counsel, while careful deliberation gives them strength.',
+    tradingApplication: 'Write out entry criteria, stop placement, and take-profit logic before entering.',
+  },
+  {
+    reference: 'Proverbs 20:13',
+    theme: 'Active Engagement',
+    paraphrase: 'Sleeping through your opportunities brings lack, while staying awake and engaged brings plenty.',
+    tradingApplication: 'Show up prepared during your best trading hours and log every session.',
+  },
+  {
+    reference: 'Proverbs 18:15',
+    theme: 'Continuous Learning',
+    paraphrase: 'A discerning mind acquires knowledge, and attentive ears seek out insight.',
+    tradingApplication: 'Study your winning and losing trades every week to sharpen pattern recognition.',
+  },
+  {
+    reference: 'Psalm 27:14',
+    theme: 'Courage & Patience',
+    paraphrase: 'Wait with strength and courage; let your heart stay steady while waiting.',
+    tradingApplication: 'Hold valid setups through normal noise without cutting winners short out of fear.',
+  },
+  {
+    reference: 'Proverbs 22:3',
+    theme: 'Foresight',
+    paraphrase: 'The sensible see trouble coming and prepare, while the naive push ahead and pay the price.',
+    tradingApplication: 'Check the economic calendar and spread conditions before placing orders.',
+  },
+  {
+    reference: 'Hebrews 12:1',
+    theme: 'Dropping Dead Weight',
+    paraphrase: 'Lay aside every weight and distraction that easily trips you up so you can run the race.',
+    tradingApplication: 'Remove cluttered indicators, distractions, and bad habits that cloud your execution.',
+  },
+  {
+    reference: 'Philippians 4:6–7',
+    theme: 'Inner Calm',
+    paraphrase: 'Bring your anxieties to prayer instead of panic, and let steady peace guard your mind.',
+    tradingApplication: 'Reset your mindset before a session so anxiety does not force bad entries.',
+  },
+  {
+    reference: 'Proverbs 11:24–25',
+    theme: 'Generosity & Balance',
+    paraphrase: 'Open-handed wisdom flourishes, while hoarding tightly with fear can shrink results.',
+    tradingApplication: 'Accept small planned losses willingly as the cost of doing business in the market.',
+  },
+  {
+    reference: 'Proverbs 16:32',
+    theme: 'Patience Over Force',
+    paraphrase: 'Patience outperforms raw aggression, and self-mastery beats conquering a city.',
+    tradingApplication: 'Winning in trading comes from patience and discipline, not forcing trades.',
+  },
+  {
+    reference: 'Proverbs 8:11',
+    theme: 'Value of Wisdom',
+    paraphrase: 'Wisdom is better than precious jewels, and nothing you desire can compare with it.',
+    tradingApplication: 'Prioritize learning risk control and market reading over chasing quick profits.',
+  },
+  {
+    reference: 'Isaiah 30:15',
+    theme: 'Quietness & Trust',
+    paraphrase: 'In returning and rest lies safety; in quietness and confidence is strength.',
+    tradingApplication: 'Stay calm and composed rather than overreacting to every tick on the chart.',
+  },
+  {
+    reference: 'Proverbs 23:23',
+    theme: 'Investing in Truth',
+    paraphrase: 'Buy truth and do not sell it—along with wisdom, instruction, and understanding.',
+    tradingApplication: 'Be honest with yourself in your journal; never fudge numbers or excuses.',
+  },
+  {
+    reference: '2 Timothy 1:7',
+    theme: 'Discipline & Sound Mind',
+    paraphrase: 'A spirit of fear does not build strength; power, love, and a disciplined mind do.',
+    tradingApplication: 'Trade with a calm, disciplined mind rather than fear of missing out or losing.',
+  },
+  {
+    reference: 'Proverbs 13:4',
+    theme: 'Effort Behind Desire',
+    paraphrase: 'The slacker craves much and gets little, while diligent effort is richly satisfied.',
+    tradingApplication: 'Pair profit goals with disciplined execution, journaling, and patience.',
+  },
+  {
+    reference: 'Proverbs 6:6–8',
+    theme: 'Proactive Habits',
+    paraphrase: 'Look at the ant: without a boss or overseer, it prepares its store in season.',
+    tradingApplication: 'Maintain your routine and risk discipline on your own without needing external push.',
+  },
+  {
+    reference: 'Proverbs 10:4',
+    theme: 'Diligence & Prosperity',
+    paraphrase: 'A slack hand brings poverty, while a diligent hand builds wealth.',
+    tradingApplication: 'Stay consistent with trade reviews, risk checks, and session preparation.',
+  },
+  {
+    reference: 'Proverbs 1:5',
+    theme: 'Sharpening Skill',
+    paraphrase: 'The wise listen and add to their learning, and the discerning gain guidance.',
+    tradingApplication: 'Treat every session as data to refine your edge rather than a personal test.',
+  },
+  {
+    reference: 'Colossians 3:23',
+    theme: 'Wholehearted Craft',
+    paraphrase: 'Whatever task you take on, work at it wholeheartedly with excellence.',
+    tradingApplication: 'Execute every trade cleanly according to plan, no matter the account size.',
+  },
+  {
+    reference: 'Proverbs 12:1',
+    theme: 'Welcoming Feedback',
+    paraphrase: 'Whoever loves discipline loves knowledge, while hating correction is foolish.',
+    tradingApplication: 'Let your drawdown data and losing trades correct your flaws without ego.',
+  },
+  {
+    reference: 'Proverbs 15:1',
+    theme: 'De-escalation',
+    paraphrase: 'A gentle answer turns away wrath, while harsh words stir up anger.',
+    tradingApplication: 'Cool down after a rough trade instead of escalating lot sizes to fight the market.',
+  },
+  {
+    reference: 'Ecclesiastes 3:1',
+    theme: 'Timing & Seasons',
+    paraphrase: 'There is a right time for every activity and a season for every purpose under heaven.',
+    tradingApplication: 'Trade active sessions with clear momentum; sit out dead or choppy hours.',
+  },
+  {
+    reference: 'Proverbs 21:20',
+    theme: 'Reserves & Prudence',
+    paraphrase: 'Wise people store up choice resources, while the foolish squander what they have.',
+    tradingApplication: 'Preserve account capital and drawdown buffer so you stay in the game.',
+  },
+  {
+    reference: 'Proverbs 4:7',
+    theme: 'Prioritizing Wisdom',
+    paraphrase: 'Wisdom is supreme; get wisdom, and with all you get, get understanding.',
+    tradingApplication: 'Understand why a setup works and where it fails before risking real money.',
+  },
+  {
+    reference: '1 Peter 5:8',
+    theme: 'Sobriety & Vigilance',
+    paraphrase: 'Stay clear-headed and alert because threats prowl looking for an opening.',
+    tradingApplication: 'Never trade tired, distracted, or emotionally compromised when risk is on the line.',
+  },
+  {
+    reference: 'Proverbs 17:14',
+    theme: 'Cutting Losses Early',
+    paraphrase: 'Starting a quarrel is like letting out water; step away before conflict escalates.',
+    tradingApplication: 'Honor your stop loss immediately—never turn a small planned loss into a disaster.',
+  },
+  {
+    reference: 'Proverbs 14:15',
+    theme: 'Skepticism & Verification',
+    paraphrase: 'The gullible believe every word, while the prudent watch their step carefully.',
+    tradingApplication: 'Verify setups on your own chart rules instead of blindly copying signals or hype.',
+  },
+  {
+    reference: 'Psalm 46:10',
+    theme: 'Stillness',
+    paraphrase: 'Be still and recognize steady ground amidst turbulent waves.',
+    tradingApplication: 'Pause before reacting to fast price spikes and check if your criteria are met.',
+  },
+  {
+    reference: 'Proverbs 16:2',
+    theme: 'Self-Honesty',
+    paraphrase: 'All a person’s ways seem right in their own eyes, while motives are weighed beneath.',
+    tradingApplication: 'Audit whether an entry came from your plan or from impulse and boredom.',
+  },
+  {
+    reference: 'Proverbs 26:11',
+    theme: 'Breaking Bad Loops',
+    paraphrase: 'Repeating the exact same harmful mistake over and over wastes lessons learned.',
+    tradingApplication: 'Fix one recurring mistake per week instead of repeating the same loss pattern.',
+  },
+  {
+    reference: 'Romans 12:2',
+    theme: 'Renewed Mindset',
+    paraphrase: 'Do not conform to reactive patterns, but be transformed by renewing your mind.',
+    tradingApplication: 'Replace impulsive retail habits with structured, process-driven execution.',
+  },
+  {
+    reference: 'Proverbs 18:13',
+    theme: 'Listening Before Acting',
+    paraphrase: 'Answering before hearing the full picture is foolish and brings shame.',
+    tradingApplication: 'Read the full multi-timeframe structure before jumping into a lower-timeframe entry.',
+  },
+  {
+    reference: 'Ecclesiastes 7:8',
+    theme: 'Finishing Strong',
+    paraphrase: 'The end of a matter is better than its beginning, and patience beats pride.',
+    tradingApplication: 'Judge your trading week by rule adherence and net growth, not one flashy trade.',
+  },
+  {
+    reference: 'Proverbs 3:5–6',
+    theme: 'Steadfast Direction',
+    paraphrase: 'Trust deeply rather than leaning solely on fragile assumptions, and keep your path straight.',
+    tradingApplication: 'Stay grounded in your tested process instead of panicking over short-term noise.',
+  },
+  {
+    reference: 'Proverbs 10:19',
+    theme: 'Less Noise, More Precision',
+    paraphrase: 'Too much talk invites error, while holding back your tongue shows wisdom.',
+    tradingApplication: 'Fewer, higher-quality trades beat constant overtrading every single week.',
+  },
+  {
+    reference: 'Proverbs 19:21',
+    theme: 'Purpose Prevails',
+    paraphrase: 'Many plans exist in the human mind, but steady purpose endures.',
+    tradingApplication: 'Let a clear, consistent trading objective guide your daily actions.',
+  },
+  {
+    reference: '2 Peter 1:5–6',
+    theme: 'Building Virtues',
+    paraphrase: 'Add knowledge to faith, self-control to knowledge, and perseverance to self-control.',
+    tradingApplication: 'Stack discipline, patience, and emotional control one habit at a time.',
+  },
+  {
+    reference: 'Proverbs 11:3',
+    theme: 'Integrity Guides',
+    paraphrase: 'The integrity of the upright guides them, while duplicity destroys the unfaithful.',
+    tradingApplication: 'Keep your risk and stop rules honest even when no one else is watching.',
+  },
+  {
+    reference: 'Proverbs 24:27',
+    theme: 'Prepare the Ground First',
+    paraphrase: 'Finish your outside work and prepare your fields before building your household.',
+    tradingApplication: 'Nail your risk rules, demo/backtest validation, and session prep before scaling.',
+  },
+  {
+    reference: 'Psalm 119:105',
+    theme: 'Light on the Path',
+    paraphrase: 'Clear guidance acts as a lamp to your feet and a light on your path.',
+    tradingApplication: 'Use clear key levels, session rules, and checklists to light your next step.',
+  },
+  {
+    reference: 'Proverbs 13:20',
+    theme: 'Healthy Environment',
+    paraphrase: 'Walking with the wise makes you wise, while keeping reckless company harms you.',
+    tradingApplication: 'Surround yourself with disciplined traders and structured study, not hype rooms.',
+  },
+  {
+    reference: 'Proverbs 20:3',
+    theme: 'Avoiding Unnecessary Fights',
+    paraphrase: 'Stepping away from strife is honorable, while any fool can pick a fight.',
+    tradingApplication: 'Do not fight strong market momentum—trade with structure or stay flat.',
+  },
+  {
+    reference: 'Matthew 6:34',
+    theme: 'One Day at a Time',
+    paraphrase: 'Do not worry about tomorrow, for each day has enough troubles of its own.',
+    tradingApplication: 'Focus on executing today’s session cleanly rather than stressing over distant targets.',
+  },
+  {
+    reference: 'Proverbs 12:15',
+    theme: 'Openness to Insight',
+    paraphrase: 'A fool’s way seems right to them, while the wise listen to advice.',
+    tradingApplication: 'Stay open to market feedback and review notes when price invalidates your thesis.',
+  },
+  {
+    reference: 'Proverbs 14:8',
+    theme: 'Discernment in Action',
+    paraphrase: 'The wisdom of the prudent is to understand their way, while folly deceives.',
+    tradingApplication: 'Know exact conditions for your setup before risking a single dollar.',
+  },
+  {
+    reference: '1 Thessalonians 4:11',
+    theme: 'Quiet, Orderly Work',
+    paraphrase: 'Make it your ambition to live quietly, mind your own business, and work with your hands.',
+    tradingApplication: 'Trade quietly and consistently in your own lane without comparing P&L to others.',
+  },
+  {
+    reference: 'Proverbs 15:24',
+    theme: 'Upward Path',
+    paraphrase: 'The path of life leads upward for the wise, turning away from downward traps.',
+    tradingApplication: 'Keep your risk caps firm so drawdowns stay shallow and recoverable.',
+  },
+  {
+    reference: 'Proverbs 21:21',
+    theme: 'Steadfast Pursuit',
+    paraphrase: 'Whoever pursues righteousness and steadfastness finds life, honor, and stability.',
+    tradingApplication: 'Pursue consistent rule execution over lucky homeruns.',
+  },
+  {
+    reference: 'James 1:19–20',
+    theme: 'Slow to Anger',
+    paraphrase: 'Be quick to listen, slow to speak, and slow to anger, for anger does not produce right outcomes.',
+    tradingApplication: 'Never enter a trade out of frustration after a loss or missed move.',
+  },
+  {
+    reference: 'Proverbs 22:29',
+    theme: 'Skilled Execution',
+    paraphrase: 'Do you see someone skilled in their work? They will stand before leaders, not the obscure.',
+    tradingApplication: 'Put in deliberate reps on chart reading and execution so skill compounds.',
+  },
+  {
+    reference: 'Ecclesiastes 9:10',
+    theme: 'Focused Effort',
+    paraphrase: 'Whatever your hand finds to do, do it with all your might while the opportunity is yours.',
+    tradingApplication: 'Stay sharp and focused during your active trading window, then log off cleanly.',
+  },
+  {
+    reference: 'Proverbs 16:8',
+    theme: 'Modest Gain With Integrity',
+    paraphrase: 'Better a little with righteousness than great revenue with unrighteousness.',
+    tradingApplication: 'A modest, rule-abiding green day beats a big rule-breaking trade every time.',
+  },
+  {
+    reference: 'Proverbs 27:1',
+    theme: 'Humility About Tomorrow',
+    paraphrase: 'Do not boast about tomorrow, for you do not know what a single day may bring.',
+    tradingApplication: 'Never assume a trade or day is guaranteed—always protect downside risk.',
+  },
+  {
+    reference: 'Proverbs 10:14',
+    theme: 'Storing Knowledge',
+    paraphrase: 'The wise store up knowledge, while the mouth of a fool invites ruin.',
+    tradingApplication: 'Document lessons from every trade so your playbook gets smarter over time.',
+  },
+  {
+    reference: 'Psalm 1:3',
+    theme: 'Deeply Rooted',
+    paraphrase: 'Like a tree planted by steady streams, it bears fruit in season and its leaves do not wither.',
+    tradingApplication: 'Build deep foundational habits that hold steady through changing market regimes.',
+  },
+  {
+    reference: 'Proverbs 17:22',
+    theme: 'Healthy Mind & Body',
+    paraphrase: 'A cheerful, healthy spirit is good medicine, while a crushed spirit drains strength.',
+    tradingApplication: 'Protect your physical health, sleep, and mental energy—they fuel sharp decisions.',
+  },
+  {
+    reference: 'Proverbs 18:10',
+    theme: 'Strong Refuge',
+    paraphrase: 'A strong tower offers protection where the righteous run and find safety.',
+    tradingApplication: 'Let hard stop losses and daily max-loss limits act as your protective shield.',
+  },
+  {
+    reference: 'Proverbs 20:18',
+    theme: 'Plans Confirmed by Counsel',
+    paraphrase: 'Establish plans by taking counsel, and wage strategy with wise guidance.',
+    tradingApplication: 'Test and confirm your strategy rules with objective data before going live.',
+  },
+  {
+    reference: '2 Corinthians 5:7',
+    theme: 'Steady Conviction',
+    paraphrase: 'Walk by steady conviction and trust rather than being shaken by every shifting sight.',
+    tradingApplication: 'Trust your tested edge and risk rules even when short-term price action looks scary.',
+  },
+  {
+    reference: 'Proverbs 13:16',
+    theme: 'Acting With Knowledge',
+    paraphrase: 'Every prudent person acts with knowledge, while fools flaunt their own folly.',
+    tradingApplication: 'Only enter trades where you clearly understand risk, invalidation, and target.',
+  },
+  {
+    reference: 'Proverbs 14:29',
+    theme: 'Great Understanding',
+    paraphrase: 'Whoever is slow to anger has great understanding, while a hasty temper magnifies folly.',
+    tradingApplication: 'Patience and emotional composure are signs of real trading maturity.',
+  },
+  {
+    reference: 'Proverbs 25:16',
+    theme: 'Moderation',
+    paraphrase: 'If you find honey, eat only what you need, lest you take too much and feel sick.',
+    tradingApplication: 'Do not overtrade after a winning streak—lock in gains and protect your edge.',
+  },
+  {
+    reference: '1 Corinthians 9:25',
+    theme: 'Strict Training',
+    paraphrase: 'Everyone competing in games exercises self-control in all things for a lasting prize.',
+    tradingApplication: 'Train your discipline and risk control with the rigor of an athlete.',
+  },
+  {
+    reference: 'Proverbs 12:24',
+    theme: 'Diligent Hands Lead',
+    paraphrase: 'Diligent hands will rule, while slackness leads to forced labor.',
+    tradingApplication: 'Consistent preparation and discipline put you in control of your trading journey.',
+  },
+  {
+    reference: 'Proverbs 15:19',
+    theme: 'Clear Road vs. Thorns',
+    paraphrase: 'The way of the lazy is hedged with thorns, while the path of the upright is a highway.',
+    tradingApplication: 'Skipping prep and risk rules creates obstacles; clean process smooths the road.',
+  },
+  {
+    reference: 'Proverbs 19:8',
+    theme: 'Caring for Your Own Growth',
+    paraphrase: 'Whoever gains wisdom loves their own soul; whoever keeps understanding prospers.',
+    tradingApplication: 'Protect your capital and mindset—they are your most valuable trading assets.',
+  },
+  {
+    reference: 'Psalm 90:17',
+    theme: 'Establishing Your Work',
+    paraphrase: 'May steady favor rest upon us and establish the work of our hands.',
+    tradingApplication: 'Keep refining your craft consistently so your work becomes solid and repeatable.',
+  },
+  {
+    reference: 'Proverbs 21:2',
+    theme: 'Checking Intentions',
+    paraphrase: 'All a person’s ways seem right in their own sight, yet motives are weighed carefully.',
+    tradingApplication: 'Check whether you are entering from a valid setup or out of boredom and revenge.',
+  },
+  {
+    reference: 'Proverbs 24:10',
+    theme: 'Strength in Adversity',
+    paraphrase: 'If you falter in times of trouble, your strength was small.',
+    tradingApplication: 'Use small drawdowns to build resilience rather than abandoning your plan.',
+  },
+  {
+    reference: 'Hebrews 10:35–36',
+    theme: 'Endurance & Promise',
+    paraphrase: 'Do not throw away your confidence, for you need endurance to receive what is promised.',
+    tradingApplication: 'Stay patient through rough patches while holding fast to your proven process.',
+  },
+  {
+    reference: 'Proverbs 11:1',
+    theme: 'Honest Scales',
+    paraphrase: 'Dishonest scales are an abomination, while accurate weights bring favor.',
+    tradingApplication: 'Measure your risk, reward, and stats accurately—never distort your numbers.',
+  },
+  {
+    reference: 'Proverbs 16:16',
+    theme: 'Wisdom Over Gold',
+    paraphrase: 'How much better to get wisdom than gold, and to get understanding than silver.',
+    tradingApplication: 'Invest time in mastering risk management and execution before chasing bigger sizes.',
+  },
+  {
+    reference: 'Proverbs 28:19',
+    theme: 'Working Your Own Field',
+    paraphrase: 'Those who work their land will have plenty of food, while chasing fantasies brings poverty.',
+    tradingApplication: 'Stick to your own high-probability setups instead of chasing every rumor.',
+  },
+  {
+    reference: 'James 3:17–18',
+    theme: 'Peaceable, Reasonable Wisdom',
+    paraphrase: 'Wisdom from above is pure, peaceable, gentle, and reasonable, bearing steady fruit.',
+    tradingApplication: 'Keep your trading calm, objective, and reasonable rather than reactive and harsh.',
+  },
+  {
+    reference: 'Proverbs 30:8–9',
+    theme: 'Balanced Provision',
+    paraphrase: 'Keep falsehood far from me and grant neither poverty nor reckless excess that causes forgetfulness.',
+    tradingApplication: 'Keep position sizing balanced so neither fear nor greed distorts your judgment.',
+  },
+  {
+    reference: 'Proverbs 1:7',
+    theme: 'Beginning of Wisdom',
+    paraphrase: 'Respect and reverence for wisdom’s source is the starting point of true knowledge.',
+    tradingApplication: 'Start every trading session with humility and respect for the market’s power.',
+  },
 ];
 
-function getEatDaySeed(dateObj) {
+function getEatDayNumber(dateObj) {
   const parts = new Intl.DateTimeFormat('en-CA', {
     timeZone: 'Africa/Nairobi',
     year: 'numeric',
@@ -146,10 +662,33 @@ function getEatDaySeed(dateObj) {
   const month = Number(parts.find((p) => p.type === 'month')?.value || '1');
   const day = Number(parts.find((p) => p.type === 'day')?.value || '1');
 
-  const utcMidnight = Date.UTC(year, month - 1, day);
-  const yearStartUtc = Date.UTC(year, 0, 1);
-  const dayOfYear = Math.floor((utcMidnight - yearStartUtc) / 86400000) + 1;
-  return year * 1000 + dayOfYear;
+  return Math.floor(Date.UTC(year, month - 1, day) / 86400000);
+}
+
+function getReshuffledCycleVerse(bank, dayNumber) {
+  const len = bank.length;
+  if (len === 0) return null;
+
+  const normalizedDay = Math.max(0, dayNumber);
+  const cycleIndex = Math.floor(normalizedDay / len);
+  const positionInCycle = ((normalizedDay % len) + len) % len;
+
+  const indices = Array.from({ length: len }, (_, i) => i);
+  let state = (cycleIndex + 1) * 2654435761;
+
+  const nextRand = () => {
+    state = (state + 0x6d2b79f5) >>> 0;
+    let t = Math.imul(state ^ (state >>> 15), 1 | state);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+
+  for (let i = len - 1; i > 0; i--) {
+    const j = Math.floor(nextRand() * (i + 1));
+    [indices[i], indices[j]] = [indices[j], indices[i]];
+  }
+
+  return bank[indices[positionInCycle]];
 }
 
 function classifyServerType(serverName = '') {
@@ -459,11 +998,12 @@ export default function App() {
     return `etj_votd_seen_${scope}_${todayEatStr}`;
   }, [session?.user?.id, todayEatStr]);
 
-  const verseOfTheDay = useMemo(() => {
-    const seed = getEatDaySeed(now);
-    const index = seed % TRADING_VOTD_BANK.length;
-    return TRADING_VOTD_BANK[index];
-  }, [now]);
+  const eatDayNumber = useMemo(() => getEatDayNumber(now), [now]);
+
+  const verseOfTheDay = useMemo(
+    () => getReshuffledCycleVerse(TRADING_VOTD_BANK, eatDayNumber),
+    [eatDayNumber]
+  );
 
   useEffect(() => {
     try {
