@@ -650,19 +650,10 @@ const TRADING_VOTD_BANK = [
   },
 ];
 
-function getEatDayNumber(dateObj) {
-  const parts = new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'Africa/Nairobi',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).formatToParts(dateObj);
-
-  const year = Number(parts.find((p) => p.type === 'year')?.value || '2026');
-  const month = Number(parts.find((p) => p.type === 'month')?.value || '1');
-  const day = Number(parts.find((p) => p.type === 'day')?.value || '1');
-
-  return Math.floor(Date.UTC(year, month - 1, day) / 86400000);
+function getLocalDayNumber(dateObj) {
+  return Math.floor(
+    Date.UTC(dateObj.getFullYear(), dateObj.getMonth(), dateObj.getDate()) / 86400000
+  );
 }
 
 function getReshuffledCycleVerse(bank, dayNumber) {
@@ -984,25 +975,23 @@ export default function App() {
   const [now, setNow] = useState(new Date());
   const [currentDate, setCurrentDate] = useState(() => new Date());
 
-  const todayEatStr = useMemo(() => {
-    return new Intl.DateTimeFormat('en-CA', {
-      timeZone: 'Africa/Nairobi',
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-    }).format(now);
+  const todayLocalStr = useMemo(() => {
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const day = String(now.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
   }, [now]);
 
   const votdStorageKey = useMemo(() => {
     const scope = session?.user?.id || 'guest';
-    return `etj_votd_seen_${scope}_${todayEatStr}`;
-  }, [session?.user?.id, todayEatStr]);
+    return `etj_votd_seen_${scope}_${todayLocalStr}`;
+  }, [session?.user?.id, todayLocalStr]);
 
-  const eatDayNumber = useMemo(() => getEatDayNumber(now), [now]);
+  const localDayNumber = useMemo(() => getLocalDayNumber(now), [now]);
 
   const verseOfTheDay = useMemo(
-    () => getReshuffledCycleVerse(TRADING_VOTD_BANK, eatDayNumber),
-    [eatDayNumber]
+    () => getReshuffledCycleVerse(TRADING_VOTD_BANK, localDayNumber),
+    [localDayNumber]
   );
 
   useEffect(() => {
@@ -1119,7 +1108,7 @@ export default function App() {
     };
   }, [session, refreshAccounts, refreshTrades, resetAddAccountForm]);
 
-  // Live 1-second EAT Clock
+  // Live 1-second Clock
   useEffect(() => {
     const timer = setInterval(() => setNow(new Date()), 1000);
     return () => clearInterval(timer);
@@ -1193,46 +1182,63 @@ export default function App() {
     session?.user?.email?.split('@')[0] ||
     'Trader';
 
-  const eatTimeData = useMemo(() => {
-    const formatter = new Intl.DateTimeFormat('en-GB', {
-      timeZone: 'Africa/Nairobi',
+  const localTimeData = useMemo(() => {
+    const resolvedTimeZone =
+      Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+    const formatter = new Intl.DateTimeFormat(undefined, {
+      timeZone: resolvedTimeZone,
       hour: '2-digit',
       minute: '2-digit',
       second: '2-digit',
-      weekday: 'short',
+      timeZoneName: 'short',
       hour12: false,
     });
     const parts = formatter.formatToParts(now);
     const getPart = (type) => parts.find((p) => p.type === type)?.value || '';
-    const hour = parseInt(getPart('hour'), 10);
-    const minute = parseInt(getPart('minute'), 10);
-    const second = getPart('second');
-    const weekday = getPart('weekday');
-    const timeString = `${String(hour).padStart(2, '0')}:${String(minute).padStart(
-      2,
-      '0'
-    )}:${second}`;
+    const hourPart = getPart('hour');
+    const minutePart = getPart('minute');
+    const secondPart = getPart('second');
+    const rawZoneLabel = getPart('timeZoneName').trim();
+    const zoneLabel =
+      rawZoneLabel && !/^GMT[+-]?\d/i.test(rawZoneLabel) && !/^UTC[+-]?\d/i.test(rawZoneLabel)
+        ? rawZoneLabel
+        : rawZoneLabel || resolvedTimeZone;
+
+    const timeString = `${hourPart}:${minutePart}:${secondPart}`;
+
+    // Global FX market hours in UTC:
+    // Forex opens Sunday 22:00 UTC and closes Friday 22:00 UTC
+    // Sydney: 22:00–07:00 UTC | Tokyo: 00:00–09:00 UTC | London: 08:00–17:00 UTC | New York: 13:00–22:00 UTC
+    const utcDay = now.getUTCDay();
+    const utcHour = now.getUTCHours();
+
     const isWeekendClosed =
-      weekday === 'Sun' ||
-      (weekday === 'Sat' && hour >= 1) ||
-      (weekday === 'Mon' && hour < 1);
+      utcDay === 6 ||
+      (utcDay === 0 && utcHour < 22) ||
+      (utcDay === 5 && utcHour >= 22);
+
     if (isWeekendClosed) {
-      return { timeString, sessionName: 'Market Closed', isActive: false };
+      return { timeString, zoneLabel, sessionName: 'Market Closed', isActive: false };
     }
-    const isSydney = hour >= 1 && hour < 10;
-    const isTokyo = hour >= 3 && hour < 12;
-    const isLondon = hour >= 11 && hour < 20;
-    const isNewYork = hour >= 16 || hour < 1;
+
+    const isSydney = utcHour >= 22 || utcHour < 7;
+    const isTokyo = utcHour >= 0 && utcHour < 9;
+    const isLondon = utcHour >= 8 && utcHour < 17;
+    const isNewYork = utcHour >= 13 && utcHour < 22;
+
     const activeList = [];
     if (isSydney) activeList.push('Sydney');
     if (isTokyo) activeList.push('Tokyo');
     if (isLondon) activeList.push('London');
     if (isNewYork) activeList.push('New York');
+
     if (activeList.length === 0) {
-      return { timeString, sessionName: 'Inactive', isActive: false };
+      return { timeString, zoneLabel, sessionName: 'Inactive', isActive: false };
     }
+
     return {
       timeString,
+      zoneLabel,
       sessionName: activeList.join(' / '),
       isActive: true,
     };
@@ -1530,7 +1536,7 @@ export default function App() {
   const calendarData = useMemo(() => {
     const year = currentDate.getFullYear();
     const month = currentDate.getMonth();
-    const monthName = currentDate.toLocaleString('en-US', { month: 'long' });
+    const monthName = currentDate.toLocaleString(undefined, { month: 'long' });
     const firstDayOfWeek = new Date(year, month, 1).getDay();
     const daysInMonth = new Date(year, month + 1, 0).getDate();
 
@@ -1585,7 +1591,7 @@ export default function App() {
   };
 
   const formatCurrency = (val) => {
-    const abs = Math.abs(val).toLocaleString('en-US', {
+    const abs = Math.abs(val).toLocaleString(undefined, {
       minimumFractionDigits: 2,
       maximumFractionDigits: 2,
     });
@@ -1602,7 +1608,7 @@ export default function App() {
     if (val === null || val === undefined || val === '') return '—';
     const num = Number(val);
     if (isNaN(num)) return '—';
-    return num.toLocaleString('en-US', {
+    return num.toLocaleString(undefined, {
       minimumFractionDigits: 2,
       maximumFractionDigits: 5,
     });
@@ -1762,7 +1768,7 @@ export default function App() {
                           {verseOfTheDay.reference}
                         </div>
                         <div className="text-[10px] font-medium text-emerald-300/90 truncate">
-                          {verseOfTheDay.theme} • {todayEatStr} EAT
+                          {verseOfTheDay.theme} • {todayLocalStr}
                         </div>
                       </div>
                     </div>
@@ -1791,7 +1797,8 @@ export default function App() {
 
             <div className="flex items-center justify-end gap-2 justify-self-end">
               <div className="font-mono text-xs sm:text-sm lg:text-base font-semibold text-zinc-200 bg-zinc-900/90 border border-zinc-800 px-3 py-1 rounded-lg whitespace-nowrap">
-                {eatTimeData.timeString} <span className="text-xs text-zinc-500">EAT</span>
+                {localTimeData.timeString}{' '}
+                <span className="text-xs text-zinc-500">{localTimeData.zoneLabel}</span>
               </div>
               <button
                 onClick={handleSignOut}
@@ -1842,12 +1849,12 @@ export default function App() {
             <div className="flex items-center gap-2 text-xs lg:text-sm font-medium text-zinc-300">
               <span
                 className={`w-2.5 h-2.5 rounded-full ${
-                  eatTimeData.isActive
+                  localTimeData.isActive
                     ? 'bg-emerald-400 shadow-[0_0_10px_#34d399]'
                     : 'bg-rose-500 shadow-[0_0_10px_#f43f5e]'
                 }`}
               />
-              <span>{eatTimeData.sessionName}</span>
+              <span>{localTimeData.sessionName}</span>
             </div>
           </div>
 
@@ -2308,7 +2315,7 @@ export default function App() {
                       const hasPnl = cell.pnl !== undefined;
                       const isPos = hasPnl && cell.pnl > 0;
                       const isNeg = hasPnl && cell.pnl < 0;
-                      const isToday = cell.dateStr === todayEatStr;
+                      const isToday = cell.dateStr === todayLocalStr;
                       return (
                         <div
                           key={cell.key}
