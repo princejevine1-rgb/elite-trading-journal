@@ -22,6 +22,7 @@ import {
   ShieldCheck,
   ChevronDown,
   Search,
+  Sparkles,
 } from 'lucide-react';
 
 const KNOWN_MT5_SERVERS = [
@@ -45,6 +46,111 @@ const KNOWN_MT5_SERVERS = [
   { broker: 'Scope Markets', server: 'ScopeMarkets-Live', type: 'Live' },
   { broker: 'Scope Markets', server: 'ScopeMarkets-Demo', type: 'Demo' },
 ];
+
+const TRADING_VOTD_BANK = [
+  {
+    reference: 'Proverbs 21:5',
+    theme: 'Planning & Discipline',
+    paraphrase: 'Careful, unhurried planning leads to steady gains, while rushing into decisions invites loss.',
+    tradingApplication: 'Wait for your session setup, liquidity sweep, and confirmation before risking capital.',
+  },
+  {
+    reference: 'Proverbs 13:11',
+    theme: 'Compounding vs. Hype',
+    paraphrase: 'Wealth gained through shortcuts and reckless haste shrinks, whereas steady accumulation grows over time.',
+    tradingApplication: 'Protect small, consistent base hits and avoid over-leveraging to force big days.',
+  },
+  {
+    reference: 'James 1:5–6',
+    theme: 'Clarity & Emotional Control',
+    paraphrase: 'Ask for wisdom when uncertain, and avoid double-minded hesitation or reactive impulses.',
+    tradingApplication: 'If a chart looks unclear or choppy, step aside rather than guessing mid-move.',
+  },
+  {
+    reference: 'Proverbs 16:3',
+    theme: 'Execution & Alignment',
+    paraphrase: 'Commit your plans to steady purpose and your intentions will establish firm footing.',
+    tradingApplication: 'Define invalidation, stop loss, and target before entering so emotions stay out of the trade.',
+  },
+  {
+    reference: 'Ecclesiastes 11:2',
+    theme: 'Risk & Diversification',
+    paraphrase: 'Spread exposure wisely rather than concentrating everything in a single vulnerable spot.',
+    tradingApplication: 'Cap per-trade risk and avoid stacking correlated positions during high-impact news.',
+  },
+  {
+    reference: 'Galatians 6:9',
+    theme: 'Patience & Consistency',
+    paraphrase: 'Do not grow weary in doing what is right; harvest comes in due season if you do not quit.',
+    tradingApplication: 'Stick to your journal review and risk rules even after a frustrating drawdown streak.',
+  },
+  {
+    reference: 'Proverbs 25:28',
+    theme: 'Self-Command',
+    paraphrase: 'A person without self-control is like a city with broken walls—open to every breach.',
+    tradingApplication: 'Enforce a daily loss limit and walk away after hitting your max loss or max trades.',
+  },
+  {
+    reference: 'Luke 14:28',
+    theme: 'Position Sizing & Cost',
+    paraphrase: 'Sit down first and calculate the full cost before starting a project you cannot finish.',
+    tradingApplication: 'Size lots from your stop distance and account risk—never pick lot size first.',
+  },
+  {
+    reference: 'Proverbs 14:23',
+    theme: 'Preparation & Process',
+    paraphrase: 'Hard work and genuine preparation bring real value, whereas mere talk leaves you empty.',
+    tradingApplication: 'Backtest, journal, and mark key levels before market open instead of chasing candles.',
+  },
+  {
+    reference: '1 Corinthians 16:13–14',
+    theme: 'Alertness & Composure',
+    paraphrase: 'Stay alert, stand firm in conviction, act with strength, and keep your spirit grounded.',
+    tradingApplication: 'Keep your posture calm during CPI, NFP, or FOMC volatility and stick to your rules.',
+  },
+  {
+    reference: 'Proverbs 27:12',
+    theme: 'Risk Awareness',
+    paraphrase: 'The prudent see danger ahead and take cover, while the careless walk straight into trouble.',
+    tradingApplication: 'Respect spreads, session rollovers, and major news spikes instead of trading blindly.',
+  },
+  {
+    reference: 'Psalm 37:7',
+    theme: 'Patience Under Pressure',
+    paraphrase: 'Be still and wait patiently without fretting when others seem to move faster.',
+    tradingApplication: 'Let price reach your order block or fair value gap rather than forcing entries early.',
+  },
+  {
+    reference: 'Proverbs 12:11',
+    theme: 'Focus on Craft',
+    paraphrase: 'Working your own ground brings plenty, while chasing empty fantasies shows poor judgment.',
+    tradingApplication: 'Master one or two instruments and setups rather than jumping across random pairs.',
+  },
+  {
+    reference: 'Proverbs 10:9',
+    theme: 'Rule Integrity',
+    paraphrase: 'Whoever walks with integrity walks securely, while crooked paths get exposed.',
+    tradingApplication: 'Follow your trading plan on every single trade—no exceptions for boredom or FOMO.',
+  },
+];
+
+function getEatDaySeed(dateObj) {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Africa/Nairobi',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(dateObj);
+
+  const year = Number(parts.find((p) => p.type === 'year')?.value || '2026');
+  const month = Number(parts.find((p) => p.type === 'month')?.value || '1');
+  const day = Number(parts.find((p) => p.type === 'day')?.value || '1');
+
+  const utcMidnight = Date.UTC(year, month - 1, day);
+  const yearStartUtc = Date.UTC(year, 0, 1);
+  const dayOfYear = Math.floor((utcMidnight - yearStartUtc) / 86400000) + 1;
+  return year * 1000 + dayOfYear;
+}
 
 function classifyServerType(serverName = '') {
   const lower = serverName.toLowerCase();
@@ -279,6 +385,11 @@ export default function App() {
   const [deleteAccountError, setDeleteAccountError] = useState('');
   const accountDropdownRef = useRef(null);
 
+  // --- VOTD (Dynamic Island) State ---
+  const [isVotdExpanded, setIsVotdExpanded] = useState(false);
+  const [hasSeenVotdToday, setHasSeenVotdToday] = useState(false);
+  const votdIslandRef = useRef(null);
+
   // --- Add Account Form States ---
   const [enableMt5Sync, setEnableMt5Sync] = useState(true);
   const [mt5Login, setMt5Login] = useState('');
@@ -333,6 +444,68 @@ export default function App() {
   // --- Clock & Calendar ---
   const [now, setNow] = useState(new Date());
   const [currentDate, setCurrentDate] = useState(() => new Date());
+
+  const todayEatStr = useMemo(() => {
+    return new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Africa/Nairobi',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).format(now);
+  }, [now]);
+
+  const votdStorageKey = useMemo(() => {
+    const scope = session?.user?.id || 'guest';
+    return `etj_votd_seen_${scope}_${todayEatStr}`;
+  }, [session?.user?.id, todayEatStr]);
+
+  const verseOfTheDay = useMemo(() => {
+    const seed = getEatDaySeed(now);
+    const index = seed % TRADING_VOTD_BANK.length;
+    return TRADING_VOTD_BANK[index];
+  }, [now]);
+
+  useEffect(() => {
+    try {
+      const seen = window.localStorage.getItem(votdStorageKey) === '1';
+      setHasSeenVotdToday(seen);
+    } catch {
+      setHasSeenVotdToday(false);
+    }
+  }, [votdStorageKey]);
+
+  const handleToggleVotdIsland = useCallback(() => {
+    setIsVotdExpanded((prev) => {
+      const next = !prev;
+      if (next && !hasSeenVotdToday) {
+        setHasSeenVotdToday(true);
+        try {
+          window.localStorage.setItem(votdStorageKey, '1');
+        } catch {
+          // Ignore storage restrictions
+        }
+      }
+      return next;
+    });
+  }, [hasSeenVotdToday, votdStorageKey]);
+
+  useEffect(() => {
+    if (!isVotdExpanded) return;
+    const handleVotdOutside = (event) => {
+      if (!votdIslandRef.current?.contains(event.target)) {
+        setIsVotdExpanded(false);
+      }
+    };
+    const handleVotdEscape = (event) => {
+      if (event.key === 'Escape') setIsVotdExpanded(false);
+    };
+    document.addEventListener('mousedown', handleVotdOutside);
+    document.addEventListener('keydown', handleVotdEscape);
+    return () => {
+      document.removeEventListener('mousedown', handleVotdOutside);
+      document.removeEventListener('keydown', handleVotdEscape);
+    };
+  }, [isVotdExpanded]);
 
   // 1. Check & Listen for Auth Session across devices
   useEffect(() => {
@@ -479,15 +652,6 @@ export default function App() {
     session?.user?.user_metadata?.trader_name ||
     session?.user?.email?.split('@')[0] ||
     'Trader';
-
-  const todayEatStr = useMemo(() => {
-    return new Intl.DateTimeFormat('en-CA', {
-      timeZone: 'Africa/Nairobi',
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-    }).format(now);
-  }, [now]);
 
   const eatTimeData = useMemo(() => {
     const formatter = new Intl.DateTimeFormat('en-GB', {
@@ -1007,18 +1171,86 @@ export default function App() {
       <div className="w-full max-w-none xl:max-w-[1600px] mx-auto space-y-5 sm:space-y-6">
         {/* HEADER */}
         <header className="space-y-3">
-          <div className="flex flex-col gap-2.5 sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex items-center gap-2.5">
-              <span className="px-2 py-0.5 text-xs font-bold tracking-wider uppercase bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 rounded">
+          <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2.5">
+            <div className="flex items-center gap-2.5 justify-self-start min-w-0">
+              <span className="px-2 py-0.5 text-xs font-bold tracking-wider uppercase bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 rounded shrink-0">
                 PRO
               </span>
-              <h1 className="text-lg sm:text-xl lg:text-2xl font-bold tracking-tight text-white">
+              <h1 className="text-lg sm:text-xl lg:text-2xl font-bold tracking-tight text-white truncate">
                 Elite Trading Journal
               </h1>
             </div>
 
-            <div className="flex items-center justify-between sm:justify-end gap-2">
-              <div className="font-mono text-xs sm:text-sm lg:text-base font-semibold text-zinc-200 bg-zinc-900/90 border border-zinc-800 px-3 py-1 rounded-lg">
+            {/* Centered Top VOTD Dynamic Island Pill & Pop-out Card */}
+            <div ref={votdIslandRef} className="relative justify-self-center self-center">
+              <button
+                type="button"
+                onClick={handleToggleVotdIsland}
+                aria-expanded={isVotdExpanded}
+                title="Verse of the Day for Traders"
+                className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-emerald-500/10 border border-emerald-500/25 text-xs text-emerald-300 transition-all duration-300 hover:bg-emerald-500/15 ${
+                  !hasSeenVotdToday && !isVotdExpanded
+                    ? 'animate-pulse ring-2 ring-emerald-400/35 shadow-[0_0_16px_rgba(52,211,153,0.22)]'
+                    : ''
+                } ${isVotdExpanded ? 'rounded-2xl px-3.5 bg-zinc-900 border-emerald-400/40' : ''}`}
+              >
+                <span
+                  className={`w-2 h-2 rounded-full bg-emerald-400 shrink-0 ${
+                    !hasSeenVotdToday ? 'animate-ping' : ''
+                  }`}
+                />
+                <Sparkles className="w-3.5 h-3.5 text-emerald-300 shrink-0" />
+                <span className="font-semibold tracking-wide text-emerald-200">VOTD</span>
+                <span className="hidden md:inline text-[11px] font-mono text-emerald-300/80">
+                  {verseOfTheDay.reference}
+                </span>
+              </button>
+
+              {isVotdExpanded && (
+                <div
+                  role="dialog"
+                  aria-label="Verse of the Day"
+                  className="absolute left-1/2 -translate-x-1/2 z-40 mt-2 w-[calc(100vw-2rem)] max-w-md rounded-3xl border border-emerald-400/30 bg-zinc-950/95 p-4 shadow-[0_20px_50px_rgba(0,0,0,0.75)] ring-1 ring-white/10 backdrop-blur-2xl transition-all duration-300"
+                >
+                  <div className="flex items-center justify-between gap-2 pb-2.5 border-b border-zinc-800/80">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-emerald-500/15 text-emerald-300 border border-emerald-500/25 shrink-0">
+                        <Sparkles className="w-3.5 h-3.5" />
+                      </span>
+                      <div className="min-w-0">
+                        <div className="text-xs font-bold text-white truncate">
+                          {verseOfTheDay.reference}
+                        </div>
+                        <div className="text-[10px] font-medium text-emerald-300/90 truncate">
+                          {verseOfTheDay.theme} • {todayEatStr} EAT
+                        </div>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setIsVotdExpanded(false)}
+                      aria-label="Collapse Verse of the Day"
+                      className="rounded-full p-1 text-zinc-400 hover:bg-zinc-800 hover:text-white transition-colors"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+
+                  <div className="mt-3 space-y-2.5 text-xs leading-relaxed">
+                    <p className="text-zinc-200">
+                      {verseOfTheDay.paraphrase}
+                    </p>
+                    <div className="rounded-2xl bg-emerald-500/[0.07] border border-emerald-500/20 px-3 py-2 text-[11px] text-emerald-200/95">
+                      <span className="font-semibold text-emerald-300">Trading Edge: </span>
+                      {verseOfTheDay.tradingApplication}
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="flex items-center justify-end gap-2 justify-self-end">
+              <div className="font-mono text-xs sm:text-sm lg:text-base font-semibold text-zinc-200 bg-zinc-900/90 border border-zinc-800 px-3 py-1 rounded-lg whitespace-nowrap">
                 {eatTimeData.timeString} <span className="text-xs text-zinc-500">EAT</span>
               </div>
               <button
